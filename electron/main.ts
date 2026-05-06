@@ -1,6 +1,7 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
-import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { join, basename, extname } from 'path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, statSync } from 'fs'
+import crypto from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
 function createWindow(): void {
@@ -68,6 +69,58 @@ app.whenReady().then(() => {
       writeFileSync(join(dataDir, filename), JSON.stringify(data, null, 2), 'utf-8')
     } catch (e) {
       console.error('[data:write]', e)
+    }
+  })
+
+  // IPC：导入知识库文件
+  ipcMain.handle('knowledge:import', async () => {
+    try {
+      const { canceled, filePaths } = await dialog.showOpenDialog({
+        title: '导入知识库文件',
+        properties: ['openFile', 'multiSelections'],
+        filters: [
+          { name: '文档', extensions: ['pdf', 'md', 'txt', 'doc', 'docx', 'csv'] },
+          { name: '所有文件', extensions: ['*'] }
+        ]
+      })
+
+      if (canceled || filePaths.length === 0) return null
+
+      const kbDir = join(app.getPath('userData'), 'knowledge_base')
+      if (!existsSync(kbDir)) mkdirSync(kbDir, { recursive: true })
+
+      const importedFiles = filePaths.map(filePath => {
+        const name = basename(filePath)
+        const destPath = join(kbDir, name)
+        
+        // 避免覆盖同名文件，如果存在则添加时间戳
+        let finalDestPath = destPath
+        let finalName = name
+        if (existsSync(destPath)) {
+          const ext = extname(name)
+          const base = basename(name, ext)
+          finalName = `${base}_${Date.now()}${ext}`
+          finalDestPath = join(kbDir, finalName)
+        }
+
+        copyFileSync(filePath, finalDestPath)
+        const stats = statSync(finalDestPath)
+
+        return {
+          id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+          name: finalName,
+          originalPath: filePath,
+          localPath: finalDestPath,
+          size: stats.size,
+          type: extname(finalName).substring(1) || 'unknown',
+          importedAt: Date.now()
+        }
+      })
+
+      return importedFiles
+    } catch (e) {
+      console.error('[knowledge:import]', e)
+      return null
     }
   })
 

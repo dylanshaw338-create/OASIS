@@ -26,8 +26,8 @@ export default function ParticleCanvas({ opacity = 0.6, particleCount = 80 }: Pa
       y: Math.random() * canvas.height,
       vx: (Math.random() - 0.5) * 0.3,
       vy: (Math.random() - 0.5) * 0.3,
-      r: Math.random() * 1.5 + 0.5,
-      opacity: Math.random() * 0.4 + 0.1
+      r: Math.random() * 1.8 + 0.8, // 稍微增大星星半径
+      opacity: Math.random() * 0.6 + 0.2 // 提高星星的基础透明度/亮度
     }))
 
     const CONNECT_DIST = 150

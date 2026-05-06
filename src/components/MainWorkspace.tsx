@@ -40,8 +40,8 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col">
-      {/* 粒子背景（低透明度，不抢焦点） */}
-      <ParticleCanvas opacity={0.18} particleCount={60} />
+      {/* 粒子背景（稍微调亮，增加存在感） */}
+      <ParticleCanvas opacity={0.4} particleCount={75} />
 
       {/* 中央径向光晕 */}
       <div

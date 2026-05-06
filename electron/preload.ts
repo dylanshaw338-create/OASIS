@@ -8,6 +8,9 @@ const api = {
       ipcRenderer.invoke('data:read', filename),
     write: (filename: string, data: unknown): Promise<void> =>
       ipcRenderer.invoke('data:write', filename, data)
+  },
+  knowledge: {
+    importFile: (): Promise<any[] | null> => ipcRenderer.invoke('knowledge:import')
   }
 }
 
