@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# Personal / internal
+CLAUDE.md
+PROJECT_VISION.md
+
+# System
+.DS_Store
+Thumbs.db
+
+# Electron
+*.log
