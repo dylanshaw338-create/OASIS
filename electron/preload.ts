@@ -11,6 +11,9 @@ const api = {
   },
   knowledge: {
     importFile: (): Promise<any[] | null> => ipcRenderer.invoke('knowledge:import')
+  },
+  ai: {
+    chat: (config: any, messages: any[]): Promise<any> => ipcRenderer.invoke('ai:chat', config, messages)
   }
 }
 

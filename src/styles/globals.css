@@ -6,16 +6,24 @@
   box-sizing: border-box;
 }
 
+:root {
+  --glass-bg: rgba(15, 23, 42, 0.4);
+  --glass-border: rgba(147, 197, 253, 0.08);
+  --glass-blur: blur(24px);
+  --glow-blue: rgba(147, 197, 253, 0.4);
+}
+
 html,
 body,
 #root {
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #000;
+  background: #030508; /* 非常深邃的星空蓝黑底色 */
   color: #fff;
-  font-family: 'SF Pro Display', 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   user-select: none;
   cursor: default;
 }
@@ -23,4 +31,24 @@ body,
 /* 禁用默认滚动条 */
 ::-webkit-scrollbar {
   display: none;
+}
+
+/* 边缘暗角（Vignette）营造封闭感和沉浸感 */
+.vignette {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: radial-gradient(circle, transparent 50%, rgba(0, 0, 0, 0.85) 150%);
+  z-index: 15; /* 覆盖在粒子之上，内容之下 */
+}
+
+/* 全局玻璃态面板样式 */
+.glass-panel {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
 }

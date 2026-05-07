@@ -5,6 +5,8 @@ import ThoughtsView from './views/ThoughtsView'
 import GraphView from './views/GraphView'
 import PapersView from './views/PapersView'
 import AIView from './views/AIView'
+import AISummonStar from './AISummonStar'
+import GlobalAIOverlay from './GlobalAIOverlay'
 
 type Tab = 'thoughts' | 'graph' | 'papers' | 'ai'
 
@@ -22,6 +24,7 @@ interface MainWorkspaceProps {
 export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<Tab>('thoughts')
   const [clock, setClock] = useState(() => formatClock())
+  const [isAIOverlayOpen, setIsAIOverlayOpen] = useState(false)
 
   // 实时时钟
   useEffect(() => {
@@ -39,7 +42,7 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
   }, [onEscapeRequest])
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden flex flex-col">
+    <div className="relative w-full h-screen overflow-hidden flex flex-col bg-[#030508]">
       {/* 粒子背景（稍微调亮，增加存在感） */}
       <ParticleCanvas opacity={0.4} particleCount={75} />
 
@@ -48,29 +51,38 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(30, 58, 138, 0.06) 0%, transparent 70%)'
+            'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(30, 58, 138, 0.08) 0%, transparent 70%)'
         }}
       />
+      
+      {/* 边缘暗角（沉浸封闭感） */}
+      <div className="vignette" />
 
-      {/* 顶栏 */}
+      {/* AI 召唤主星 (固定在右侧) */}
+      <AISummonStar onClick={() => setIsAIOverlayOpen(true)} />
+
+      {/* AI 悬浮面板 */}
+      <GlobalAIOverlay isOpen={isAIOverlayOpen} onClose={() => setIsAIOverlayOpen(false)} />
+
+      {/* 顶栏：悬浮玻璃态 */}
       <motion.div
-        initial={{ opacity: 0, y: -8 }}
+        initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.2 }}
-        className="relative z-10 flex items-center justify-between px-8"
+        transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
+        className="relative z-20 flex items-center justify-between px-8 mx-6 mt-4 rounded-xl glass-panel"
         style={{
-          height: '42px',
-          borderBottom: '1px solid rgba(99, 179, 237, 0.08)',
-          flexShrink: 0
+          height: '46px',
+          flexShrink: 0,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
         }}
       >
         {/* 左：标题 */}
         <span
           style={{
             fontSize: '0.65rem',
-            letterSpacing: '0.3em',
-            color: 'rgba(255,255,255,0.35)',
-            fontWeight: 300
+            letterSpacing: '0.4em',
+            color: 'rgba(255,255,255,0.45)',
+            fontWeight: 400
           }}
         >
           ◈ FUTURE HCI
@@ -79,11 +91,12 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         {/* 中：时间 */}
         <span
           style={{
-            fontSize: '0.6rem',
-            letterSpacing: '0.15em',
-            color: 'rgba(147, 197, 253, 0.3)',
+            fontSize: '0.65rem',
+            letterSpacing: '0.2em',
+            color: 'rgba(147, 197, 253, 0.4)',
             fontWeight: 300,
-            fontVariantNumeric: 'tabular-nums'
+            fontVariantNumeric: 'tabular-nums',
+            textShadow: '0 0 8px rgba(147, 197, 253, 0.2)'
           }}
         >
           {clock}
@@ -93,12 +106,12 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         <span
           style={{
             fontSize: '0.55rem',
-            letterSpacing: '0.2em',
-            color: 'rgba(255,255,255,0.15)',
-            fontWeight: 300
+            letterSpacing: '0.25em',
+            color: 'rgba(255,255,255,0.25)',
+            fontWeight: 400
           }}
         >
-          v0.1 · PHASE 0
+          v0.1 · PHASE 1
         </span>
       </motion.div>
 
@@ -115,16 +128,17 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         {activeTab === 'ai' && <AIView />}
       </motion.div>
 
-      {/* 底部导航 */}
+      {/* 底部导航：悬浮玻璃态 */}
       <motion.div
-        initial={{ opacity: 0, y: 8 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.3 }}
-        className="relative z-10 flex items-center justify-center gap-12"
+        transition={{ duration: 0.8, delay: 0.3, ease: 'easeOut' }}
+        className="relative z-20 flex items-center justify-center gap-16 mx-auto mb-6 rounded-2xl glass-panel"
         style={{
-          height: '50px',
-          borderTop: '1px solid rgba(99, 179, 237, 0.1)',
-          flexShrink: 0
+          height: '56px',
+          padding: '0 3rem',
+          flexShrink: 0,
+          boxShadow: '0 8px 30px rgba(0,0,0,0.4)'
         }}
       >
         {TABS.map((tab) => {
@@ -133,25 +147,27 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
+              className="group relative"
               style={{
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.4rem',
-                padding: '0.25rem 0.5rem',
-                transition: 'opacity 0.2s ease'
+                gap: '0.6rem',
+                padding: '0.5rem',
               }}
             >
               <span
                 style={{
-                  fontSize: '0.7rem',
-                  letterSpacing: '0.05em',
-                  color: isActive ? 'rgba(147, 197, 253, 0.9)' : 'rgba(255,255,255,0.2)',
+                  fontSize: '0.75rem',
+                  letterSpacing: '0.15em',
+                  color: isActive ? 'rgba(147, 197, 253, 0.95)' : 'rgba(255,255,255,0.25)',
                   fontWeight: isActive ? 400 : 300,
-                  transition: 'color 0.3s ease'
+                  transition: 'color 0.4s ease, text-shadow 0.4s ease',
+                  textShadow: isActive ? '0 0 12px rgba(147, 197, 253, 0.4)' : 'none'
                 }}
+                className="group-hover:text-blue-200/60"
               >
                 {tab.label}
               </span>
@@ -159,24 +175,26 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
                 <span
                   style={{
                     fontSize: '0.5rem',
-                    letterSpacing: '0.15em',
-                    color: isActive ? 'rgba(147, 197, 253, 0.4)' : 'rgba(255,255,255,0.1)',
+                    letterSpacing: '0.2em',
+                    color: isActive ? 'rgba(147, 197, 253, 0.5)' : 'rgba(255,255,255,0.15)',
                     fontWeight: 300,
-                    transition: 'color 0.3s ease'
+                    transition: 'color 0.4s ease'
                   }}
                 >
                   {tab.sub}
                 </span>
               )}
-              {/* 激活指示线 */}
+              {/* 激活指示光斑 */}
               {isActive && (
                 <motion.div
                   layoutId="tab-indicator"
+                  className="absolute -bottom-1 left-1/2 -translate-x-1/2"
                   style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    height: '1px',
-                    background: 'rgba(147, 197, 253, 0.5)'
+                    width: '30%',
+                    height: '2px',
+                    background: 'rgba(147, 197, 253, 0.8)',
+                    borderRadius: '2px',
+                    boxShadow: '0 0 10px 2px rgba(147, 197, 253, 0.5)'
                   }}
                 />
               )}

@@ -124,6 +124,33 @@ app.whenReady().then(() => {
     }
   })
 
+  // IPC：AI 聊天通信 (MiniMax 代理)
+  ipcMain.handle('ai:chat', async (_event, config, messages) => {
+    const { apiKey, model } = config
+    try {
+      // https://api.minimax.chat/v1/text/chatcompletion_v2
+      const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: model || 'abab6.5s-chat',
+          messages: messages
+        })
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.base_resp?.status_msg || 'Request failed')
+      }
+      return data
+    } catch (e: any) {
+      console.error('[ai:chat]', e)
+      throw e
+    }
+  })
+
   createWindow()
   createDesktopShortcut()
 

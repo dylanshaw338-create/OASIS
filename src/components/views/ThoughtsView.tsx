@@ -68,15 +68,20 @@ export default function ThoughtsView() {
       currentId: string,
       currentContent: string
     ): Promise<ThoughtsStore> => {
-      const thought = currentStore.thoughts.find((t) => t.id === currentId)
-      if (!thought) return currentStore
-      const captured = thoughtsService.captureVersion(thought, currentContent)
-      const newStore: ThoughtsStore = {
-        ...currentStore,
-        thoughts: currentStore.thoughts.map((t) => (t.id === currentId ? captured : t))
+      try {
+        const thought = (currentStore.thoughts || []).find((t) => t.id === currentId)
+        if (!thought) return currentStore
+        const captured = thoughtsService.captureVersion(thought, currentContent)
+        const newStore: ThoughtsStore = {
+          ...currentStore,
+          thoughts: (currentStore.thoughts || []).map((t) => (t.id === currentId ? captured : t))
+        }
+        await thoughtsService.save(newStore)
+        return newStore
+      } catch (err) {
+        console.error('保存版本失败:', err)
+        return currentStore
       }
-      await thoughtsService.save(newStore)
-      return newStore
     },
     []
   )
@@ -101,28 +106,88 @@ export default function ThoughtsView() {
     [flushAndCapture]
   )
 
-  // ── 新建思想 ──
+  // ── 删除思想 ──
+  const handleDelete = useCallback(
+    async (idToDelete: string) => {
+      const { store, selectedId } = stateRef.current
+      if (!store) return
+
+      // 弹窗确认
+      if (!window.confirm('确定要删除这条记录吗？该操作不可恢复。')) {
+        return
+      }
+
+      try {
+        const remainingThoughts = store.thoughts.filter((t) => t.id !== idToDelete)
+        
+        let newStore: ThoughtsStore
+        let newSelectedId: string | null = null
+        let newContent = ''
+
+        if (remainingThoughts.length === 0) {
+          // 如果删空了，强制创建一个新的空白条目
+          const newThought = thoughtsService.createThought('')
+          newStore = { ...store, thoughts: [newThought] }
+          newSelectedId = newThought.id
+          newContent = ''
+        } else {
+          newStore = { ...store, thoughts: remainingThoughts }
+          // 如果删除的是当前选中的，默认选中排序后的第一个
+          if (selectedId === idToDelete) {
+            const sorted = sortThoughts(remainingThoughts)
+            newSelectedId = sorted[0].id
+            newContent = sorted[0].content
+          } else {
+            // 删除的不是当前选中的，保持当前选中状态
+            newSelectedId = selectedId
+            newContent = stateRef.current.content
+          }
+        }
+
+        await thoughtsService.save(newStore)
+        setStore(newStore)
+        if (newSelectedId !== selectedId) {
+          setSelectedId(newSelectedId)
+          setContent(newContent)
+          setIsPreview(false)
+        }
+      } catch (err) {
+        console.error('删除失败:', err)
+        alert('删除失败: ' + String(err))
+      }
+    },
+    []
+  )
   const handleNew = useCallback(
     async (
-      store: ThoughtsStore | null,
-      selectedId: string | null,
-      content: string
+      currentStore: ThoughtsStore | null,
+      currentSelectedId: string | null,
+      currentContent: string
     ) => {
-      if (!store) return
-      let latestStore = store
-      if (selectedId) latestStore = await flushAndCapture(store, selectedId, content)
+      try {
+        // 核心修复点：即使 currentStore 为空（如由于某些原因没加载出来），也允许创建
+        let latestStore = currentStore || { schemaVersion: 1, thoughts: [] }
+        
+        if (currentSelectedId) {
+          latestStore = await flushAndCapture(latestStore, currentSelectedId, currentContent)
+        }
 
-      const newThought = thoughtsService.createThought('')
-      const newStore: ThoughtsStore = {
-        ...latestStore,
-        thoughts: [newThought, ...latestStore.thoughts]
+        const newThought = thoughtsService.createThought('')
+        const newStore: ThoughtsStore = {
+          ...latestStore,
+          thoughts: [newThought, ...(latestStore.thoughts || [])]
+        }
+        
+        await thoughtsService.save(newStore)
+        setStore(newStore)
+        setSelectedId(newThought.id)
+        setContent('')
+        setIsPreview(false)
+        setTimeout(() => textareaRef.current?.focus(), 50)
+      } catch (err) {
+        console.error('新建思想失败:', err)
+        alert('新建失败，已拦截崩溃: ' + String(err))
       }
-      await thoughtsService.save(newStore)
-      setStore(newStore)
-      setSelectedId(newThought.id)
-      setContent('')
-      setIsPreview(false)
-      setTimeout(() => textareaRef.current?.focus(), 50)
     },
     [flushAndCapture]
   )
@@ -157,19 +222,23 @@ export default function ThoughtsView() {
   // ── 衍生状态 ──
   const sorted = store ? sortThoughts(store.thoughts) : []
 
-  if (!store) return <LoadingView />
+  // 移除了提前 return LoadingView，避免完全阻塞界面
+  // if (!store) return <LoadingView />
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-      {/* ════ 左侧面板 ════ */}
+      {/* ════ 左侧面板：玻璃态侧边栏 ════ */}
       <aside
+        className="glass-panel"
         style={{
-          width: '200px',
+          width: '240px',
           flexShrink: 0,
-          borderRight: '1px solid rgba(255,255,255,0.05)',
+          border: 'none',
+          borderRight: '1px solid rgba(147, 197, 253, 0.05)',
           display: 'flex',
           flexDirection: 'column',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          background: 'rgba(10, 15, 30, 0.2)'
         }}
       >
         {/* 新建按钮 */}
@@ -242,6 +311,26 @@ export default function ThoughtsView() {
             {saveStatus === 'saving' ? 'SAVING...' : 'SAVED'}
           </span>
 
+          {/* 删除按钮 */}
+          <button
+            onClick={() => handleDelete(selectedId!)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: '0.52rem',
+              letterSpacing: '0.22em',
+              color: 'rgba(239, 68, 68, 0.4)', // 红色调
+              transition: 'color 0.2s',
+              marginRight: '1rem'
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(239, 68, 68, 0.9)')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(239, 68, 68, 0.4)')}
+            title="删除当前笔记"
+          >
+            DELETE
+          </button>
+
           {/* 阅读/编辑切换 */}
           <button
             onClick={() => setIsPreview((p) => !p)}
@@ -273,24 +362,25 @@ export default function ThoughtsView() {
             ref={textareaRef}
             value={content}
             onChange={handleChange}
-            placeholder="# 开始思考..."
+            placeholder="# 记录此刻的思维..."
             spellCheck={false}
             style={{
               flex: 1,
               width: '100%',
-              padding: '3.5rem 15% 3rem 15%',
+              padding: '4rem 20% 4rem 15%',
               background: 'transparent',
               border: 'none',
               outline: 'none',
               resize: 'none',
-              color: 'rgba(255,255,255,0.92)',
-              fontSize: '1rem',
-              lineHeight: '2',
-              letterSpacing: '0.02em',
-              fontFamily: "'SF Mono','Fira Code','Cascadia Code','Consolas',monospace",
-              fontWeight: 400,
-              caretColor: 'rgba(200,228,252,0.7)',
-              overflowY: 'auto'
+              color: 'rgba(255,255,255,0.95)',
+              fontSize: '1.1rem',
+              lineHeight: '2.2',
+              letterSpacing: '0.03em',
+              fontFamily: "ui-monospace, 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace",
+              fontWeight: 300,
+              caretColor: 'rgba(147, 197, 253, 0.8)',
+              overflowY: 'auto',
+              textShadow: '0 0 1px rgba(255,255,255,0.1)'
             }}
           />
         )}
@@ -380,20 +470,23 @@ function ThoughtItem({
       <p
         style={{
           fontSize: '0.48rem',
-          letterSpacing: '0.1em',
-          color: 'rgba(200,228,252,0.25)',
-          marginBottom: '0.28rem'
+          letterSpacing: '0.15em',
+          color: isActive ? 'rgba(147, 197, 253, 0.6)' : 'rgba(147, 197, 253, 0.3)',
+          marginBottom: '0.35rem',
+          transition: 'color 0.3s'
         }}
       >
         {date} · {time}
       </p>
       <p
         style={{
-          fontSize: '0.62rem',
-          color: isActive ? 'rgba(255,255,255,0.78)' : 'rgba(255,255,255,0.32)',
-          letterSpacing: '0.02em',
-          lineHeight: 1.4,
-          transition: 'color 0.15s'
+          fontSize: '0.7rem',
+          color: isActive ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.4)',
+          letterSpacing: '0.04em',
+          lineHeight: 1.5,
+          fontWeight: isActive ? 400 : 300,
+          transition: 'all 0.3s ease',
+          textShadow: isActive ? '0 0 10px rgba(255,255,255,0.2)' : 'none'
         }}
       >
         {preview}

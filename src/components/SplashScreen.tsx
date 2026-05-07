@@ -45,18 +45,29 @@ export default function SplashScreen({ onEnter, onEscapeRequest }: SplashScreenP
   // 粒子网格动画由 ParticleCanvas 组件负责
 
   return (
-    <div className="relative w-full h-screen bg-black overflow-hidden">
-      {/* 粒子背景 */}
-      <ParticleCanvas opacity={0.6} />
+    <div className="relative w-full h-screen bg-[#030508] overflow-hidden">
+      {/* 背景深邃缩放动画 */}
+      <motion.div 
+        className="absolute inset-0"
+        initial={{ scale: 1.05 }}
+        animate={{ scale: 1 }}
+        transition={{ duration: 10, ease: 'easeOut' }}
+      >
+        {/* 粒子背景 */}
+        <ParticleCanvas opacity={0.6} particleCount={100} />
 
-      {/* 中央径向光晕 */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(30, 58, 138, 0.15) 0%, transparent 70%)'
-        }}
-      />
+        {/* 中央径向光晕 */}
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(ellipse 60% 50% at 50% 50%, rgba(30, 58, 138, 0.2) 0%, transparent 80%)'
+          }}
+        />
+      </motion.div>
+
+      {/* 边缘暗角 */}
+      <div className="vignette" />
 
       {/* 主内容区 */}
       <div className="relative z-10 flex flex-col items-center justify-center w-full h-full">
@@ -76,17 +87,18 @@ export default function SplashScreen({ onEnter, onEscapeRequest }: SplashScreenP
             style={{
               fontSize: 'clamp(3rem, 8vw, 7rem)',
               fontWeight: 200,
-              letterSpacing: '0.35em',
+              letterSpacing: '0.4em',
               color: '#ffffff',
-              fontFamily: "'SF Pro Display', 'Inter', system-ui"
+              fontFamily: "'SF Pro Display', 'Inter', system-ui",
+              textShadow: '0 0 40px rgba(147, 197, 253, 0.6), 0 0 10px rgba(255, 255, 255, 0.4)'
             }}
           >
             {TITLE.split('').map((char, i) => (
               <motion.span
                 key={i}
-                initial={{ opacity: 0, y: 20 }}
-                animate={i < charIndex ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
-                transition={{ duration: 0.4, ease: 'easeOut' }}
+                initial={{ opacity: 0, y: 20, filter: 'blur(8px)' }}
+                animate={i < charIndex ? { opacity: 1, y: 0, filter: 'blur(0px)' } : { opacity: 0, y: 20, filter: 'blur(8px)' }}
+                transition={{ duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
                 style={{ display: 'inline-block' }}
               >
                 {char === ' ' ? '\u00A0' : char}

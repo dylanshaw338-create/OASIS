@@ -8,6 +8,10 @@ dist/
 # Personal / internal
 CLAUDE.md
 PROJECT_VISION.md
+ai_config.json
+thoughts.json
+knowledge_base.json
+knowledge_base/
 
 # System
 .DS_Store

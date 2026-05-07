@@ -20,7 +20,8 @@ export const thoughtsService = {
   async load(): Promise<ThoughtsStore> {
     try {
       const raw = await window.electronAPI.data.read(THOUGHTS_FILE)
-      if (!raw) return emptyStore()
+      // 防御性编程：如果读取的 JSON 没有 thoughts 数组，返回初始状态
+      if (!raw || !Array.isArray((raw as any).thoughts)) return emptyStore()
       return raw as ThoughtsStore
     } catch {
       return emptyStore()
@@ -51,14 +52,15 @@ export const thoughtsService = {
 
   // 更新内容并追加一个版本快照（切换/离开时调用）
   captureVersion(thought: Thought, content: string): Thought {
-    // 内容无变化则不产生版本
-    const lastVersion = thought.versions[thought.versions.length - 1]
+    // 核心修复：防范旧数据中没有 versions 数组导致的 undefined.length 崩溃
+    const safeVersions = thought.versions || []
+    const lastVersion = safeVersions[safeVersions.length - 1]
     const hasChange = !lastVersion || lastVersion.content !== thought.content
 
     const newVersion: ThoughtVersion = { content: thought.content, savedAt: new Date().toISOString() }
     const versions = hasChange
-      ? [...thought.versions, newVersion].slice(-MAX_VERSIONS)
-      : thought.versions
+      ? [...safeVersions, newVersion].slice(-MAX_VERSIONS)
+      : safeVersions
 
     return {
       ...thought,

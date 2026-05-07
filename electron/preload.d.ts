@@ -19,10 +19,15 @@ interface KnowledgeAPI {
   importFile: () => Promise<ImportedFile[] | null>
 }
 
+interface AIAPI {
+  chat: (config: { provider: string, apiKey: string, model: string }, messages: { role: string, content: string }[]) => Promise<any>
+}
+
 interface FutureHCIAPI {
   quit: () => void
   data: DataAPI
   knowledge: KnowledgeAPI
+  ai: AIAPI
 }
 
 declare global {
