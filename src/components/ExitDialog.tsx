@@ -22,31 +22,38 @@ export default function ExitDialog({ visible, onConfirm, onCancel }: ExitDialogP
     <AnimatePresence>
       {visible && (
         <>
-          {/* 蒙层：点击外部取消 */}
+          {/* 背景遮罩 */}
           <motion.div
             key="overlay"
-            className="fixed inset-0 z-50 flex items-center justify-center"
+            className="fixed inset-0 z-50"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             style={{ background: 'rgba(0, 0, 0, 0.75)', backdropFilter: 'blur(12px)' }}
             onClick={onCancel}
-          >
-            {/* 弹窗：阻止点击穿透 */}
+            translate="no"
+            aria-hidden="true"
+          />
+
+          {/* 弹窗：阻止点击穿透 */}
             <motion.div
               key="dialog"
               onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.94, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              initial={{ opacity: 0, scale: 0.94, x: '-50%', y: 'calc(-50% + 12px)' }}
+              animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
+              exit={{ opacity: 0, scale: 0.94, x: '-50%', y: 'calc(-50% + 12px)' }}
               transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
               style={{
                 width: '26rem',
                 background: 'rgba(4, 8, 20, 0.97)',
                 border: '1px solid rgba(200, 228, 252, 0.12)',
                 boxShadow: '0 0 60px rgba(180, 215, 245, 0.06), 0 0 0 1px rgba(200, 228, 252, 0.04)',
-                padding: '2.5rem 2.5rem 2rem'
+                padding: '2.5rem 2.5rem 2rem',
+                position: 'fixed',
+                top: '50%',
+                left: '50%',
+                zIndex: 51
               }}
             >
               {/* 顶部标识线 */}
@@ -109,7 +116,6 @@ export default function ExitDialog({ visible, onConfirm, onCancel }: ExitDialogP
                 ESC · CANCEL &nbsp;&nbsp; ENTER · CONFIRM
               </p>
             </motion.div>
-          </motion.div>
         </>
       )}
     </AnimatePresence>

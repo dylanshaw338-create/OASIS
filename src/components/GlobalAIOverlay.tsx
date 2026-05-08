@@ -21,15 +21,32 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
+  // 1. 初始化检查配置和加载历史记录
   useEffect(() => {
     if (isOpen) {
       checkConfig()
+      loadChatHistory()
     }
   }, [isOpen])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  const loadChatHistory = async () => {
+    try {
+      const history = await window.electronAPI.data.read('ai_history.json')
+      // 增加安全防范，如果 history 不是数组或者不存在，给个默认空数组
+      if (history && Array.isArray(history)) {
+        setMessages(history)
+      } else {
+        setMessages([])
+      }
+    } catch (e) {
+      console.error('Failed to load chat history', e)
+      setMessages([])
+    }
+  }
 
   const checkConfig = async () => {
     try {
@@ -39,9 +56,11 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
         setModel((config as any).model || 'abab6.5s-chat')
         setIsConfiguring(false)
       } else {
+        setModel('abab6.5s-chat') // 确保有一个默认有效的字符串
         setIsConfiguring(true)
       }
     } catch (e) {
+      setModel('abab6.5s-chat')
       setIsConfiguring(true)
     }
   }
@@ -59,19 +78,81 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
     setMessages(newMessages)
     setInput('')
     setLoading(true)
+    
+    // 每次发生对话变动，立即持久化保存
+    try {
+      await window.electronAPI.data.write('ai_history.json', newMessages)
+    } catch (e) {
+      console.error('Failed to write history', e)
+    }
 
     try {
       const config = { provider: 'minimax', apiKey, model }
-      const response = await window.electronAPI.ai.chat(config, newMessages)
+      
+      // 2. 获取本地思想笔记，注入到 System Prompt
+      let systemPrompt = "你是一个名为 OASIS AI 的深度思想伙伴，帮助用户探索未来人机交互。你需要基于用户记录的思想，提供深刻、有启发性的见解。"
+      try {
+        const thoughtsStore = await window.electronAPI.data.read('thoughts.json')
+        if (thoughtsStore && (thoughtsStore as any).thoughts) {
+          const recentThoughts = (thoughtsStore as any).thoughts
+            .slice(0, 10) // 提取最近的10条笔记，防止超过 Token 限制
+            .map((t: any) => `[${new Date(t.updatedAt).toLocaleString()}] ${t.content}`)
+            .join('\n\n')
+            
+          if (recentThoughts) {
+            systemPrompt += `\n\n【用户的最新思想笔记】:\n${recentThoughts}\n\n请在回答中结合用户的这些笔记内容进行发散和讨论。`
+          }
+        }
+      } catch (err) {
+        console.error('Failed to read thoughts for AI context', err)
+      }
+
+      // 将 System Prompt 塞在最前面
+      const payloadMessages = [
+        { role: 'system', content: systemPrompt },
+        ...newMessages
+      ]
+
+      const response = await window.electronAPI.ai.chat(config, payloadMessages)
       
       if (response && response.choices && response.choices.length > 0) {
-        setMessages([...newMessages, response.choices[0].message])
+        const aiMessage = response.choices[0].message
+        if (aiMessage) {
+          // 核心修复：只保留 role 和 content，剔除 tool_calls 等可能导致上下文序列报错的特殊字段
+          const cleanMessage: Message = {
+            role: aiMessage.role || 'assistant',
+            content: aiMessage.content || ''
+          }
+          
+          const finalMessages = [...newMessages, cleanMessage]
+          setMessages(finalMessages)
+          // AI 回复后再次保存持久化
+          try {
+            await window.electronAPI.data.write('ai_history.json', finalMessages)
+          } catch (e) {
+            console.error('Failed to write history', e)
+          }
+        } else {
+          throw new Error('API 响应中缺少 message 字段')
+        }
       } else {
-        setMessages([...newMessages, { role: 'assistant', content: '抱歉，接口返回异常或无内容。' }])
+        const finalMessages = [...newMessages, { role: 'assistant', content: '抱歉，接口返回异常或无内容。' } as Message]
+        setMessages(finalMessages)
+        try {
+          await window.electronAPI.data.write('ai_history.json', finalMessages)
+        } catch (e) {
+          console.error('Failed to write history', e)
+        }
       }
     } catch (err: any) {
       console.error(err)
-      setMessages([...newMessages, { role: 'assistant', content: `[Error] ${err.message || '请求失败'}` }])
+      const finalMessages = [...newMessages, { role: 'assistant', content: `[Error] ${err.message || '请求失败'}` } as Message]
+      setMessages(finalMessages)
+      try {
+        await window.electronAPI.data.write('ai_history.json', finalMessages)
+      } catch (e) {
+        console.error('Failed to write history', e)
+      }
     } finally {
       setLoading(false)
     }
@@ -93,6 +174,8 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
+            translate="no"
+            aria-hidden="true"
           />
 
           {/* AI 交互面板 */}
@@ -199,7 +282,7 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
                 {/* 顶栏 */}
                 <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <span style={{ fontSize: '0.65rem', letterSpacing: '0.2em', color: 'rgba(147, 197, 253, 0.8)', fontWeight: 300 }}>
-                    NEURAL LINK · {model.toUpperCase()}
+                    NEURAL LINK · {String(model || 'UNKNOWN').toUpperCase()}
                   </span>
                   <button
                     onClick={() => setIsConfiguring(true)}
@@ -211,13 +294,13 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
 
                 {/* 消息列表 */}
                 <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6" style={{ scrollbarWidth: 'none' }}>
-                  {messages.length === 0 && (
+                  {(!messages || messages.length === 0) && (
                     <div className="m-auto text-center opacity-30">
                       <p style={{ fontSize: '0.8rem', letterSpacing: '0.2em', color: 'rgba(147, 197, 253, 0.8)', fontWeight: 300 }}>OASIS AI</p>
                       <p style={{ fontSize: '0.6rem', letterSpacing: '0.05em', color: 'white', marginTop: '0.5rem' }}>随时准备协助您的探索</p>
                     </div>
                   )}
-                  {messages.map((msg, i) => (
+                  {messages && messages.map((msg, i) => msg && (
                     <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                       <span style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.2)', letterSpacing: '0.1em', marginBottom: '4px' }}>
                         {msg.role === 'user' ? 'YOU' : 'AI'}
@@ -233,10 +316,12 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
                           lineHeight: 1.6,
                           maxWidth: '85%',
                           wordWrap: 'break-word',
-                          whiteSpace: 'pre-wrap'
+                          whiteSpace: 'pre-wrap',
+                          userSelect: 'text', // 3. 允许选中复制文本
+                          WebkitUserSelect: 'text'
                         }}
                       >
-                        {msg.content}
+                        {msg.content || ''}
                       </div>
                     </div>
                   ))}

@@ -128,6 +128,10 @@ app.whenReady().then(() => {
   ipcMain.handle('ai:chat', async (_event, config, messages) => {
     const { apiKey, model } = config
     try {
+      // 增加超时控制
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 60000) // 60s 超时
+
       // https://api.minimax.chat/v1/text/chatcompletion_v2
       const response = await fetch('https://api.minimax.chat/v1/text/chatcompletion_v2', {
         method: 'POST',
@@ -137,12 +141,27 @@ app.whenReady().then(() => {
         },
         body: JSON.stringify({
           model: model || 'abab6.5s-chat',
-          messages: messages
-        })
+          messages: messages,
+          max_tokens: 4096, // 4. 解除字数截断限制
+          tools: [
+            {
+              type: 'web_search'
+            }
+          ]
+        }),
+        signal: controller.signal
       })
-      const data = await response.json()
+      clearTimeout(timeoutId)
+
+      let data
+      try {
+        data = await response.json()
+      } catch (jsonErr) {
+        throw new Error('API 返回了非法的 JSON 格式。可能是网络代理问题或服务端错误。')
+      }
+
       if (!response.ok) {
-        throw new Error(data.base_resp?.status_msg || 'Request failed')
+        throw new Error(data?.base_resp?.status_msg || `HTTP Error: ${response.status}`)
       }
       return data
     } catch (e: any) {
