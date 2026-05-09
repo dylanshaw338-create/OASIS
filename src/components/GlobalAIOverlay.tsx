@@ -98,7 +98,7 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       const config = { provider: 'minimax', apiKey, model }
       
       // 2. 获取本地思想笔记，注入到 System Prompt
-      let systemPrompt = "你是一个名为 OASIS AI 的深度思想伙伴，帮助用户探索未来人机交互。你需要基于用户记录的思想，提供深刻、有启发性的见解。"
+      let systemPrompt = "你是一个名为 OASIS AI 的深度思想伙伴，致力于帮助用户探索未来人机交互的范式。你已完全接入全球互联网，并具备实时的网络搜索能力。当用户询问你是否可以联网、或者需要了解任何外部的最新资讯时，你必须如实告诉用户你可以联网，并主动调用搜索工具去获取最新信息。你需要基于用户记录的思想，提供深刻、有启发性的见解。"
       try {
         const thoughtsStore = await window.electronAPI.data.read('thoughts.json')
         if (thoughtsStore && (thoughtsStore as any).thoughts) {
