@@ -483,16 +483,14 @@ export default function ThoughtsView() {
 
       {/* ════ 列 1：分区侧边栏 ════ */}
       <aside
-        className="glass-panel"
         style={{
-          width: '160px',
+          width: '180px',
           flexShrink: 0,
-          border: 'none',
-          borderRight: '1px solid rgba(147, 197, 253, 0.05)',
+          borderRight: '1px solid rgba(255,255,255,0.03)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          background: 'rgba(5, 10, 20, 0.3)'
+          background: 'rgba(0,0,0,0.2)'
         }}
       >
         <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -590,16 +588,14 @@ export default function ThoughtsView() {
 
       {/* ════ 列 2：思想列表 ════ */}
       <aside
-        className="glass-panel"
         style={{
-          width: '240px',
+          width: '260px',
           flexShrink: 0,
-          border: 'none',
-          borderRight: '1px solid rgba(147, 197, 253, 0.05)',
+          borderRight: '1px solid rgba(255,255,255,0.03)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          background: 'rgba(10, 15, 30, 0.2)'
+          background: 'rgba(0,0,0,0.1)'
         }}
       >
         {/* 新建按钮 */}
@@ -629,10 +625,12 @@ export default function ThoughtsView() {
         </button>
 
         {/* 条目列表 */}
-        <div style={{ flex: 1, overflowY: 'auto' }} className="thought-list">
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0.5rem 0' }} className="thought-list">
           {filteredThoughts.length === 0 && (
-            <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: '0.6rem' }}>
-              此分区为空
+            <div style={{ padding: '4rem 1rem', display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.3 }}>
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '1rem' }}><path d="M12 20h9"></path><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+              <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '0.75rem', letterSpacing: '0.1em' }}>此分区暂无思想</div>
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.55rem', marginTop: '0.4rem', letterSpacing: '0.05em' }}>等待被唤醒的留白...</div>
             </div>
           )}
           {filteredThoughts.map((t) => (
@@ -732,22 +730,23 @@ export default function ThoughtsView() {
               onChange={handleTitleChange}
               placeholder="无标题"
               spellCheck={false}
+              className="title-input"
               style={{
                 width: '100%',
                 background: 'transparent',
                 border: 'none',
                 outline: 'none',
                 color: 'rgba(255,255,255,0.95)',
-                fontSize: '1.8rem',
+                fontSize: '2.2rem',
                 fontWeight: 300,
-                letterSpacing: '0.05em',
+                letterSpacing: '0.02em',
                 marginBottom: '1rem',
                 padding: '0',
-                textShadow: '0 0 10px rgba(255,255,255,0.2)',
                 WebkitAppRegion: 'no-drag',
                 WebkitUserSelect: 'text',
                 userSelect: 'text',
-                pointerEvents: 'auto'
+                pointerEvents: 'auto',
+                transition: 'text-shadow 0.3s ease'
               }}
             />
           )}
@@ -762,6 +761,7 @@ export default function ThoughtsView() {
               onChange={handleContentChange}
               placeholder="记录此刻的思维..."
               spellCheck={false}
+              className="content-textarea"
               style={{
                 flex: 1,
                 width: '100%',
@@ -780,7 +780,8 @@ export default function ThoughtsView() {
                 WebkitAppRegion: 'no-drag',
                 WebkitUserSelect: 'text',
                 userSelect: 'text',
-                pointerEvents: 'auto'
+                pointerEvents: 'auto',
+                transition: 'text-shadow 0.3s ease'
               }}
             />)}
             </div>
@@ -800,6 +801,14 @@ export default function ThoughtsView() {
         textarea::-webkit-scrollbar { width: 3px; }
         textarea::-webkit-scrollbar-track { background: transparent; }
         textarea::-webkit-scrollbar-thumb { background: rgba(200,228,252,0.1); border-radius: 2px; }
+        
+        /* Focus 时的微霓虹光晕反馈 */
+        .title-input:focus {
+          text-shadow: 0 0 16px rgba(147, 197, 253, 0.3) !important;
+        }
+        .content-textarea:focus {
+          text-shadow: 0 0 8px rgba(255, 255, 255, 0.1) !important;
+        }
       `}</style>
     </div>
   )

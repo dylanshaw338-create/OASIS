@@ -43,20 +43,38 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
 
   return (
     <div className="relative w-full h-screen overflow-hidden flex flex-col bg-[#030508]">
-      {/* 粒子背景（稍微调亮，增加存在感） */}
-      <ParticleCanvas opacity={0.4} particleCount={75} />
+      {/* 宏大的极缓星云漂移背景 */}
+      <motion.div
+        className="absolute inset-0 pointer-events-none opacity-40"
+        animate={{
+          backgroundPosition: ['0% 0%', '100% 100%', '0% 0%']
+        }}
+        transition={{ duration: 120, repeat: Infinity, ease: 'linear' }}
+        style={{
+          background: `
+            radial-gradient(circle at 20% 30%, rgba(30, 58, 138, 0.15) 0%, transparent 50%),
+            radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.1) 0%, transparent 50%)
+          `,
+          backgroundSize: '200% 200%'
+        }}
+      />
+
+      {/* 粒子背景（大幅增加粒子数量，增强透明度） */}
+      <ParticleCanvas opacity={0.7} particleCount={180} />
 
       {/* 中央径向光晕 */}
       <div
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(30, 58, 138, 0.08) 0%, transparent 70%)'
+            'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(30, 58, 138, 0.12) 0%, transparent 70%)'
         }}
       />
       
-      {/* 边缘暗角（沉浸封闭感） */}
-      <div className="vignette" />
+      {/* 边缘暗角（沉浸封闭感，强化暗度） */}
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: 'radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.4) 85%, rgba(0,0,0,0.8) 100%)'
+      }} />
 
       {/* AI 召唤主星 (固定在右侧) */}
       <AISummonStar onClick={() => setIsAIOverlayOpen(true)} />
@@ -64,16 +82,23 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
       {/* AI 悬浮面板 */}
       <GlobalAIOverlay isOpen={isAIOverlayOpen} onClose={() => setIsAIOverlayOpen(false)} />
 
-      {/* 顶栏：悬浮玻璃态 */}
+      {/* 顶栏：悬浮黑曜石质感 */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
-        className="relative z-20 flex items-center justify-between px-8 mx-6 mt-4 rounded-xl glass-panel"
+        className="relative z-20 flex items-center justify-between px-8 mx-8 mt-6 rounded-2xl"
         style={{
-          height: '46px',
+          height: '48px',
           flexShrink: 0,
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+          background: 'rgba(5, 8, 15, 0.4)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
+          borderRight: '1px solid rgba(0, 0, 0, 0.5)',
+          borderBottom: '1px solid rgba(0, 0, 0, 0.8)',
+          boxShadow: '0 20px 40px -10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)'
         }}
       >
         {/* 左：标题 */}
@@ -115,12 +140,22 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         </span>
       </motion.div>
 
-      {/* 内容区 */}
+      {/* 核心内容区包裹：深渊画框 */}
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.8, delay: 0.4 }}
-        className="relative z-10 flex-1 overflow-hidden"
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.8, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-10 flex-1 overflow-hidden mx-8 my-6 rounded-[24px]"
+        style={{
+          background: 'rgba(3, 5, 10, 0.6)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.03)',
+          borderLeft: '1px solid rgba(255, 255, 255, 0.02)',
+          borderRight: '1px solid rgba(0, 0, 0, 0.6)',
+          borderBottom: '1px solid rgba(0, 0, 0, 0.8)',
+          boxShadow: '0 30px 60px -15px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.02)'
+        }}
       >
         {activeTab === 'thoughts' && <ThoughtsView />}
         {activeTab === 'graph' && <GraphView />}
@@ -128,17 +163,24 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         {activeTab === 'ai' && <AIView />}
       </motion.div>
 
-      {/* 底部导航：悬浮玻璃态 */}
+      {/* 底部导航：悬浮黑曜石与磁性交互 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, delay: 0.3, ease: 'easeOut' }}
-        className="relative z-20 flex items-center justify-center gap-16 mx-auto mb-6 rounded-2xl glass-panel"
+        className="relative z-20 flex items-center justify-center gap-16 mx-auto mb-8 rounded-[24px]"
         style={{
-          height: '56px',
-          padding: '0 3rem',
+          height: '60px',
+          padding: '0 3.5rem',
           flexShrink: 0,
-          boxShadow: '0 8px 30px rgba(0,0,0,0.4)'
+          background: 'rgba(5, 8, 15, 0.45)',
+          backdropFilter: 'blur(24px)',
+          WebkitBackdropFilter: 'blur(24px)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
+          borderRight: '1px solid rgba(0, 0, 0, 0.5)',
+          borderBottom: '1px solid rgba(0, 0, 0, 0.8)',
+          boxShadow: '0 24px 48px -12px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05)'
         }}
       >
         {TABS.map((tab) => {
@@ -156,6 +198,13 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
                 alignItems: 'center',
                 gap: '0.6rem',
                 padding: '0.5rem',
+                transition: 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)'
+              }}
+              onMouseEnter={(e) => {
+                if (!isActive) e.currentTarget.style.transform = 'translateY(-2px)'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)'
               }}
             >
               <span

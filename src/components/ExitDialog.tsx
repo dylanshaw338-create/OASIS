@@ -22,98 +22,109 @@ export default function ExitDialog({ visible, onConfirm, onCancel }: ExitDialogP
     <AnimatePresence>
       {visible && (
         <>
-          {/* 背景遮罩 */}
+          {/* 背景遮罩：极致简洁，纯粹的暗色模糊 */}
           <motion.div
             key="overlay"
             className="fixed inset-0 z-50"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            style={{ background: 'rgba(0, 0, 0, 0.75)', backdropFilter: 'blur(12px)' }}
+            transition={{ duration: 0.3 }}
+            style={{ background: 'rgba(0, 0, 0, 0.4)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
             onClick={onCancel}
             translate="no"
             aria-hidden="true"
           />
 
-          {/* 弹窗：阻止点击穿透 */}
+          {/* 弹窗：深邃黑曜石悬浮质感 */}
             <motion.div
               key="dialog"
               onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.94, x: '-50%', y: 'calc(-50% + 12px)' }}
+              initial={{ opacity: 0, scale: 0.96, x: '-50%', y: 'calc(-50% + 20px)' }}
               animate={{ opacity: 1, scale: 1, x: '-50%', y: '-50%' }}
-              exit={{ opacity: 0, scale: 0.94, x: '-50%', y: 'calc(-50% + 12px)' }}
-              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+              exit={{ opacity: 0, scale: 0.96, x: '-50%', y: 'calc(-50% + 20px)' }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
               style={{
-                width: '26rem',
-                background: 'rgba(4, 8, 20, 0.97)',
-                border: '1px solid rgba(200, 228, 252, 0.12)',
-                boxShadow: '0 0 60px rgba(180, 215, 245, 0.06), 0 0 0 1px rgba(200, 228, 252, 0.04)',
-                padding: '2.5rem 2.5rem 2rem',
+                width: '340px',
+                background: '#121620', // 与 AI 面板同源的冷调深空色
+                border: '1px solid rgba(255, 255, 255, 0.05)',
+                borderRadius: '20px',
+                boxShadow: '0 30px 60px -15px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
+                padding: '2rem 2.5rem',
                 position: 'fixed',
                 top: '50%',
                 left: '50%',
-                zIndex: 51
+                zIndex: 51,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                textAlign: 'center'
               }}
             >
-              {/* 顶部标识线 */}
-              <div
-                style={{
-                  width: '2rem',
-                  height: '1px',
-                  background: 'rgba(210, 235, 255, 0.35)',
-                  marginBottom: '1.75rem'
-                }}
-              />
+              {/* 顶部图标：休眠/断开隐喻 */}
+              <div style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.03)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '1.5rem',
+                color: 'rgba(255,255,255,0.6)'
+              }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                  <line x1="12" y1="2" x2="12" y2="12"></line>
+                </svg>
+              </div>
 
               {/* 标题 */}
-              <p
+              <h2
                 style={{
-                  fontSize: '0.55rem',
-                  letterSpacing: '0.35em',
-                  color: 'rgba(200, 228, 252, 0.35)',
-                  fontWeight: 300,
-                  marginBottom: '1rem'
-                }}
-              >
-                CONFIRM EXIT
-              </p>
-
-              {/* 主文本 */}
-              <p
-                style={{
-                  fontSize: '1.05rem',
-                  color: 'rgba(255, 255, 255, 0.82)',
-                  fontWeight: 300,
-                  lineHeight: 1.5,
-                  letterSpacing: '0.01em',
-                  marginBottom: '2.25rem'
+                  fontSize: '1.15rem',
+                  color: 'rgba(255, 255, 255, 0.95)',
+                  fontWeight: 400,
+                  letterSpacing: '0.02em',
+                  margin: '0 0 0.5rem 0'
                 }}
               >
                 离开这个宇宙？
+              </h2>
+
+              {/* 副标题 */}
+              <p
+                style={{
+                  fontSize: '0.75rem',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  fontWeight: 300,
+                  lineHeight: 1.6,
+                  margin: '0 0 2rem 0'
+                }}
+              >
+                神经连接即将断开<br/>所有思绪已锚定在本地锚点
               </p>
 
               {/* 按钮区 */}
-              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: '1rem', width: '100%', justifyContent: 'center' }}>
                 <DialogButton onClick={onCancel} variant="ghost">
                   CANCEL
                 </DialogButton>
                 <DialogButton onClick={onConfirm} variant="danger">
-                  EXIT
+                  DISCONNECT
                 </DialogButton>
               </div>
 
               {/* 键盘提示 */}
               <p
                 style={{
-                  marginTop: '1.75rem',
+                  marginTop: '1.5rem',
                   fontSize: '0.5rem',
-                  letterSpacing: '0.25em',
-                  color: 'rgba(255, 255, 255, 0.12)',
-                  textAlign: 'right'
+                  letterSpacing: '0.15em',
+                  color: 'rgba(255, 255, 255, 0.2)',
                 }}
               >
-                ESC · CANCEL &nbsp;&nbsp; ENTER · CONFIRM
+                ESC 取消 &nbsp;·&nbsp; ENTER 确认
               </p>
             </motion.div>
         </>
@@ -133,36 +144,41 @@ function DialogButton({
   children: React.ReactNode
 }) {
   const base: React.CSSProperties = {
-    padding: '0.5rem 1.4rem',
-    fontSize: '0.62rem',
-    letterSpacing: '0.2em',
-    fontWeight: 300,
-    border: '1px solid',
+    padding: '0.6rem 1.8rem',
+    fontSize: '0.75rem',
+    letterSpacing: '0.1em',
+    fontWeight: 500,
+    borderRadius: '8px',
     cursor: 'pointer',
-    transition: 'all 0.18s ease',
-    background: 'transparent'
+    transition: 'all 0.2s ease',
+    border: 'none',
+    outline: 'none'
   }
 
   const styles: Record<string, React.CSSProperties> = {
     ghost: {
       ...base,
-      color: 'rgba(255, 255, 255, 0.35)',
-      borderColor: 'rgba(255, 255, 255, 0.1)'
+      background: 'transparent',
+      color: 'rgba(255, 255, 255, 0.6)',
     },
     danger: {
       ...base,
-      color: 'rgba(210, 235, 255, 0.7)',
-      borderColor: 'rgba(200, 228, 252, 0.18)'
+      background: 'rgba(239, 68, 68, 0.15)',
+      color: 'rgba(239, 68, 68, 0.9)',
+      border: '1px solid rgba(239, 68, 68, 0.2)',
     }
   }
 
   const hover: Record<string, Partial<React.CSSProperties>> = {
-    ghost: { color: 'rgba(255,255,255,0.65)', borderColor: 'rgba(255,255,255,0.22)' },
+    ghost: { 
+      background: 'rgba(255, 255, 255, 0.05)',
+      color: 'rgba(255, 255, 255, 0.95)' 
+    },
     danger: {
-      color: 'rgba(220, 240, 255, 0.92)',
-      borderColor: 'rgba(200, 228, 252, 0.35)',
-      background: 'rgba(180, 215, 245, 0.06)',
-      boxShadow: '0 0 12px rgba(200, 228, 252, 0.06)'
+      background: 'rgba(239, 68, 68, 0.25)',
+      color: 'rgba(239, 68, 68, 1)',
+      border: '1px solid rgba(239, 68, 68, 0.4)',
+      boxShadow: '0 4px 12px rgba(239, 68, 68, 0.2)'
     }
   }
 

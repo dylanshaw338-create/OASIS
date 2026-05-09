@@ -28,9 +28,20 @@ body,
   cursor: default;
 }
 
-/* 禁用默认滚动条 */
+/* 美化全局滚动条 (隐形化) */
 ::-webkit-scrollbar {
-  display: none;
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(147, 197, 253, 0.1);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(147, 197, 253, 0.3);
 }
 
 /* 边缘暗角（Vignette）营造封闭感和沉浸感 */
@@ -51,4 +62,9 @@ body,
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--glass-border);
+}
+
+/* 保证 Markdown 样式隔离 */
+.md-preview * {
+  user-select: text;
 }

@@ -3,8 +3,16 @@ import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 
 interface Message {
+  id?: string
   role: 'user' | 'assistant'
   content: string
+}
+
+interface ChatSession {
+  id: string
+  title: string
+  updatedAt: string
+  messages: Message[]
 }
 
 interface GlobalAIOverlayProps {
@@ -14,45 +22,172 @@ interface GlobalAIOverlayProps {
 
 export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProps) {
   const [isConfiguring, setIsConfiguring] = useState(false)
+  const [showHistory, setShowHistory] = useState(false)
+  
+  // 批量管理状态
+  const [isBatchMode, setIsBatchMode] = useState(false)
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(new Set())
+
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('abab6.5s-chat')
-  const [messages, setMessages] = useState<Message[]>([])
+  const [injectLocalThoughts, setInjectLocalThoughts] = useState(true)
+
+  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const prevMessagesLengthRef = useRef(0) // 用于判断是新增还是删除
+
+  // 计算当前渲染的消息列表
+  const currentSession = sessions.find(s => s.id === currentSessionId)
+  const messages = currentSession?.messages || []
+
+  const makeId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
   // 1. 初始化检查配置和加载历史记录
   useEffect(() => {
     if (isOpen) {
       checkConfig()
       loadChatHistory()
+    } else {
+      // 关闭面板时退出批量模式
+      setIsBatchMode(false)
+      setSelectedMessageIds(new Set())
     }
   }, [isOpen])
 
+  // 修复：仅在消息数量增加时滚动到底部，删除时不滚动
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    if (messages.length > prevMessagesLengthRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+    prevMessagesLengthRef.current = messages.length
   }, [messages])
 
   const loadChatHistory = async () => {
     try {
       const history = await window.electronAPI.data.read('ai_history.json')
-      // 增加安全防范，如果 history 不是数组或者不存在，给个默认空数组
+      
       if (history && Array.isArray(history)) {
-        // 过滤掉 null 元素和不合法的消息，并剔除多余的属性
-        const sanitizedHistory = history
-          .filter(msg => msg && msg.role && msg.content)
-          .map(msg => ({
-            role: msg.role,
-            content: msg.content
-          }))
-        setMessages(sanitizedHistory)
+        if (history.length === 0) {
+          createNewSession()
+          return
+        }
+
+        // 兼容性判断：如果第一项是 Message 结构（没有 title），说明是旧版本纯数组格式
+        const isLegacy = history[0] && history[0].role && !history[0].title
+
+        if (isLegacy) {
+          const sanitizedHistory = history
+            .filter(msg => msg && msg.role && msg.content)
+            .map(msg => ({
+              id: makeId(),
+              role: msg.role,
+              content: msg.content
+            }))
+          
+          const migratedSession: ChatSession = {
+            id: makeId(),
+            title: '历史对话',
+            updatedAt: new Date().toISOString(),
+            messages: sanitizedHistory
+          }
+          setSessions([migratedSession])
+          setCurrentSessionId(migratedSession.id)
+        } else {
+          // 新版结构
+          const loadedSessions = history as ChatSession[]
+          // 按更新时间降序排序
+          loadedSessions.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+          setSessions(loadedSessions)
+          setCurrentSessionId(loadedSessions[0]?.id || null)
+        }
       } else {
-        setMessages([])
+        createNewSession()
       }
     } catch (e) {
       console.error('Failed to load chat history', e)
-      setMessages([])
+      createNewSession()
+    }
+  }
+
+  const createNewSession = () => {
+    const newSession: ChatSession = {
+      id: makeId(),
+      title: '新对话',
+      updatedAt: new Date().toISOString(),
+      messages: []
+    }
+    setSessions(prev => [newSession, ...prev])
+    setCurrentSessionId(newSession.id)
+    setShowHistory(false)
+  }
+
+  const deleteSession = async (e: React.MouseEvent, idToDelete: string) => {
+    e.stopPropagation()
+    const newSessions = sessions.filter(s => s.id !== idToDelete)
+    setSessions(newSessions)
+    
+    if (currentSessionId === idToDelete) {
+      if (newSessions.length > 0) {
+        setCurrentSessionId(newSessions[0].id)
+      } else {
+        createNewSession() // 如果全删光了，自动新建一个
+        return // createNewSession 会接管后续状态，但需要处理保存
+      }
+    }
+    
+    try {
+      await window.electronAPI.data.write('ai_history.json', newSessions)
+    } catch (err) {
+      console.error('Failed to write history after deletion', err)
+    }
+  }
+
+  const deleteMessage = async (msgIdToDelete: string) => {
+    if (!currentSessionId) return
+    const updatedSessions = sessions.map(s => {
+      if (s.id === currentSessionId) {
+        return {
+          ...s,
+          messages: s.messages.filter(m => m.id !== msgIdToDelete),
+          updatedAt: new Date().toISOString()
+        }
+      }
+      return s
+    })
+    
+    setSessions(updatedSessions)
+    try {
+      await window.electronAPI.data.write('ai_history.json', updatedSessions)
+    } catch (err) {
+      console.error('Failed to write history after message deletion', err)
+    }
+  }
+
+  const handleBatchDelete = async () => {
+    if (!currentSessionId || selectedMessageIds.size === 0) return
+    const updatedSessions = sessions.map(s => {
+      if (s.id === currentSessionId) {
+        return {
+          ...s,
+          messages: s.messages.filter(m => m.id && !selectedMessageIds.has(m.id)),
+          updatedAt: new Date().toISOString()
+        }
+      }
+      return s
+    })
+    
+    setSessions(updatedSessions)
+    setSelectedMessageIds(new Set())
+    setIsBatchMode(false)
+    try {
+      await window.electronAPI.data.write('ai_history.json', updatedSessions)
+    } catch (err) {
+      console.error('Failed to write history after batch deletion', err)
     }
   }
 
@@ -62,34 +197,50 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       if (config && (config as any).apiKey) {
         setApiKey((config as any).apiKey)
         setModel((config as any).model || 'abab6.5s-chat')
+        setInjectLocalThoughts((config as any).injectLocalThoughts !== false)
         setIsConfiguring(false)
       } else {
         setModel('abab6.5s-chat') // 确保有一个默认有效的字符串
+        setInjectLocalThoughts(true)
         setIsConfiguring(true)
       }
     } catch (e) {
       setModel('abab6.5s-chat')
+      setInjectLocalThoughts(true)
       setIsConfiguring(true)
     }
   }
 
   const saveConfig = async () => {
     if (!apiKey.trim()) return
-    await window.electronAPI.data.write('ai_config.json', { provider: 'minimax', apiKey, model })
+    await window.electronAPI.data.write('ai_config.json', { provider: 'minimax', apiKey, model, injectLocalThoughts })
     setIsConfiguring(false)
   }
 
   const handleSend = async () => {
-    if (!input.trim() || loading) return
+    if (!input.trim() || loading || !currentSessionId) return
 
-    const newMessages = [...messages, { role: 'user', content: input } as Message]
-    setMessages(newMessages)
+    const newMessage: Message = { id: makeId(), role: 'user', content: input }
+    const newMessages = [...messages, newMessage]
+    
+    // 生成动态标题 (取第一条用户消息的前15个字)
+    const newTitle = newMessages.length === 1 && newMessages[0].role === 'user'
+      ? newMessages[0].content.slice(0, 15) + (newMessages[0].content.length > 15 ? '...' : '')
+      : currentSession?.title || '新对话'
+
+    const updatedSessions = sessions.map(s => {
+      if (s.id === currentSessionId) {
+        return { ...s, title: newTitle, messages: newMessages, updatedAt: new Date().toISOString() }
+      }
+      return s
+    })
+
+    setSessions(updatedSessions)
     setInput('')
     setLoading(true)
     
-    // 每次发生对话变动，立即持久化保存
     try {
-      await window.electronAPI.data.write('ai_history.json', newMessages)
+      await window.electronAPI.data.write('ai_history.json', updatedSessions)
     } catch (e) {
       console.error('Failed to write history', e)
     }
@@ -99,71 +250,78 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       
       // 2. 获取本地思想笔记，注入到 System Prompt
       let systemPrompt = "你是一个名为 OASIS AI 的深度思想伙伴，致力于帮助用户探索未来人机交互的范式。你已完全接入全球互联网，并具备实时的网络搜索能力。面对任何需要实时信息的问题，请立刻主动调用搜索工具。如果搜索不到有效信息，或者用户只是在询问你的能力，请用你自然、优雅的语气坦诚地说明情况即可，绝不能胡编乱造。你需要基于用户记录的思想，提供深刻、有启发性的见解。"
-      try {
-        const thoughtsStore = await window.electronAPI.data.read('thoughts.json')
-        if (thoughtsStore && (thoughtsStore as any).thoughts) {
-          const recentThoughts = (thoughtsStore as any).thoughts
-            .slice(0, 10) // 提取最近的10条笔记，防止超过 Token 限制
-            .map((t: any) => `[${new Date(t.updatedAt).toLocaleString()}] ${t.content}`)
-            .join('\n\n')
-            
-          if (recentThoughts) {
-            systemPrompt += `\n\n【用户的最新思想笔记】:\n${recentThoughts}\n\n请在回答中结合用户的这些笔记内容进行发散和讨论。`
+      
+      if (injectLocalThoughts) {
+        try {
+          const thoughtsStore = await window.electronAPI.data.read('thoughts.json')
+          if (thoughtsStore && (thoughtsStore as any).thoughts) {
+            const recentThoughts = (thoughtsStore as any).thoughts
+              .slice(0, 10) // 提取最近的10条笔记，防止超过 Token 限制
+              .map((t: any) => `[${new Date(t.updatedAt).toLocaleString()}] ${t.content}`)
+              .join('\n\n')
+              
+            if (recentThoughts) {
+              systemPrompt += `\n\n【用户的最新思想笔记】:\n${recentThoughts}\n\n请在回答中结合用户的这些笔记内容进行发散和讨论。`
+            }
           }
+        } catch (err) {
+          console.error('Failed to read thoughts for AI context', err)
         }
-      } catch (err) {
-        console.error('Failed to read thoughts for AI context', err)
       }
 
-      // 将 System Prompt 塞在最前面
+      // 将 System Prompt 塞在最前面 (注意：发送给 API 时不需要 id 字段)
       const payloadMessages = [
         { role: 'system', name: 'system', content: systemPrompt },
-        ...newMessages
+        ...newMessages.map(m => ({ role: m.role, content: m.content }))
       ]
 
       const response = await window.electronAPI.ai.chat(config, payloadMessages)
       
+      const appendAiMessage = async (msgContent: string, isError = false) => {
+        setSessions(prev => {
+          const latestSessions = prev.map(s => {
+            if (s.id === currentSessionId) {
+              return {
+                ...s,
+                messages: [...s.messages, { id: makeId(), role: 'assistant', content: msgContent } as Message],
+                updatedAt: new Date().toISOString()
+              }
+            }
+            return s
+          })
+          window.electronAPI.data.write('ai_history.json', latestSessions).catch(e => console.error('Failed to write history', e))
+          return latestSessions
+        })
+      }
+
       if (response && response.choices && response.choices.length > 0) {
         const choice = response.choices[0]
-        // MiniMax 开启联网搜索时，可能会返回 messages 数组而不是单个 message
         const aiMessage = choice.message || (choice.messages && choice.messages.length > 0 ? choice.messages[choice.messages.length - 1] : null)
         
         if (aiMessage) {
-          // 核心修复：只保留 role 和 content，剔除 tool_calls 等可能导致上下文序列报错的特殊字段
-          const cleanMessage: Message = {
-            role: aiMessage.role || 'assistant',
-            content: aiMessage.content || ''
-          }
-          
-          const finalMessages = [...newMessages, cleanMessage]
-          setMessages(finalMessages)
-          // AI 回复后再次保存持久化
-          try {
-            await window.electronAPI.data.write('ai_history.json', finalMessages)
-          } catch (e) {
-            console.error('Failed to write history', e)
-          }
+          await appendAiMessage(aiMessage.content || '')
         } else {
           throw new Error('API 响应中缺少 message 字段')
         }
       } else {
-        const finalMessages = [...newMessages, { role: 'assistant', content: '抱歉，接口返回异常或无内容。' } as Message]
-        setMessages(finalMessages)
-        try {
-          await window.electronAPI.data.write('ai_history.json', finalMessages)
-        } catch (e) {
-          console.error('Failed to write history', e)
-        }
+        await appendAiMessage('抱歉，接口返回异常或无内容。', true)
       }
     } catch (err: any) {
       console.error(err)
-      const finalMessages = [...newMessages, { role: 'assistant', content: `[Error] ${err.message || '请求失败'}` } as Message]
-      setMessages(finalMessages)
-      try {
-        await window.electronAPI.data.write('ai_history.json', finalMessages)
-      } catch (e) {
-        console.error('Failed to write history', e)
-      }
+      setSessions(prev => {
+        const latestSessions = prev.map(s => {
+          if (s.id === currentSessionId) {
+            return {
+              ...s,
+              messages: [...s.messages, { id: makeId(), role: 'assistant', content: `[Error] ${err.message || '请求失败'}` } as Message],
+              updatedAt: new Date().toISOString()
+            }
+          }
+          return s
+        })
+        window.electronAPI.data.write('ai_history.json', latestSessions).catch(e => console.error('Failed to write history', e))
+        return latestSessions
+      })
     } finally {
       setLoading(false)
     }
@@ -173,13 +331,13 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
     <AnimatePresence>
       {isOpen && (
         <>
-          {/* 背景遮罩：不全黑，使用带有玻璃态的高级模糊 */}
+          {/* 背景遮罩：极致简洁，纯粹的暗色模糊 */}
           <motion.div
             className="fixed inset-0 z-40"
             style={{
-              background: 'rgba(10, 15, 30, 0.4)',
-              backdropFilter: 'blur(12px)',
-              WebkitBackdropFilter: 'blur(12px)'
+              background: 'rgba(0, 0, 0, 0.2)',
+              backdropFilter: 'blur(8px)',
+              WebkitBackdropFilter: 'blur(8px)'
             }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -189,25 +347,24 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
             aria-hidden="true"
           />
 
-          {/* AI 交互面板 */}
+          {/* AI 交互面板：去除发光边框，采用极简深灰纸张感 */}
           <motion.div
             className="fixed z-50 flex flex-col"
             style={{
               right: '8%',
-              top: '15%',
-              bottom: '15%',
-              width: '480px',
-              background: 'rgba(20, 30, 50, 0.65)',
-              backdropFilter: 'blur(20px)',
-              WebkitBackdropFilter: 'blur(20px)',
-              border: '1px solid rgba(147, 197, 253, 0.15)',
-              borderRadius: '16px',
-              boxShadow: '0 20px 40px -10px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.05)'
+              top: '12%',
+              bottom: '12%',
+              width: '520px',
+              background: '#121620', // 带有冷蓝调的深色底板，与主程序和谐
+              border: '1px solid rgba(255,255,255,0.05)',
+              borderRadius: '12px',
+              boxShadow: '0 24px 48px -12px rgba(0,0,0,0.4)',
+              overflow: 'hidden'
             }}
-            initial={{ opacity: 0, x: 40, scale: 0.95 }}
+            initial={{ opacity: 0, x: 20, scale: 0.98 }}
             animate={{ opacity: 1, x: 0, scale: 1 }}
-            exit={{ opacity: 0, x: 40, scale: 0.95 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            exit={{ opacity: 0, x: 20, scale: 0.98 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
           >
             {isConfiguring ? (
               /* 设置界面 */
@@ -264,6 +421,22 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
                       <option value="abab6.5-chat" style={{ background: '#1a202c' }}>abab6.5-chat</option>
                     </select>
                   </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(147, 197, 253, 0.7)' }}>CONTEXT</label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.75rem', color: 'rgba(255,255,255,0.8)' }}>
+                      <input 
+                        type="checkbox" 
+                        checked={injectLocalThoughts}
+                        onChange={(e) => setInjectLocalThoughts(e.target.checked)}
+                        style={{ accentColor: '#93c5fd', width: '16px', height: '16px', cursor: 'pointer' }}
+                      />
+                      融合本地思想笔记作为 AI 上下文
+                    </label>
+                    <p style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.3)', marginTop: '0.25rem' }}>
+                      开启后，AI 将读取您最近的思想笔记以提供个性化回答。关闭后可节省 Token 并避免干扰。
+                    </p>
+                  </div>
                 </div>
 
                 <div className="mt-auto flex justify-end">
@@ -293,98 +466,332 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
                 <style>{`
                   .ai-chat-markdown p { margin-bottom: 0.5em; }
                   .ai-chat-markdown p:last-child { margin-bottom: 0; }
-                  .ai-chat-markdown strong { color: #fff; font-weight: 600; text-shadow: 0 0 8px rgba(255,255,255,0.4); }
+                  .ai-chat-markdown strong { color: #fff; font-weight: 500; }
                   .ai-chat-markdown ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
                   .ai-chat-markdown ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
                   .ai-chat-markdown li { margin-bottom: 0.25em; }
-                  .ai-chat-markdown a { color: #93c5fd; text-decoration: underline; text-underline-offset: 2px; }
-                  .ai-chat-markdown code { background: rgba(255,255,255,0.1); padding: 0.1em 0.3em; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+                  .ai-chat-markdown a { color: #60a5fa; text-decoration: none; }
+                  .ai-chat-markdown a:hover { text-decoration: underline; }
+                  .ai-chat-markdown code { background: rgba(255,255,255,0.08); padding: 0.15em 0.3em; border-radius: 4px; font-family: monospace; font-size: 0.9em; color: #e2e8f0; }
+                  .ai-chat-markdown pre { background: #1e2536; padding: 1rem; border-radius: 6px; overflow-x: auto; margin: 0.5em 0; }
+                  .ai-chat-markdown pre code { background: transparent; padding: 0; color: #e2e8f0; }
                 `}</style>
                 {/* 顶栏 */}
-                <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                  <span style={{ fontSize: '0.65rem', letterSpacing: '0.2em', color: 'rgba(147, 197, 253, 0.8)', fontWeight: 300 }}>
-                    NEURAL LINK · {String(model || 'UNKNOWN').toUpperCase()}
-                  </span>
-                  <button
-                    onClick={() => setIsConfiguring(true)}
-                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: '0.6rem' }}
-                  >
-                    CONFIG
-                  </button>
-                </div>
-
-                {/* 消息列表 */}
-                <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6" style={{ scrollbarWidth: 'none' }}>
-                  {(!messages || messages.length === 0) && (
-                    <div className="m-auto text-center opacity-30">
-                      <p style={{ fontSize: '0.8rem', letterSpacing: '0.2em', color: 'rgba(147, 197, 253, 0.8)', fontWeight: 300 }}>OASIS AI</p>
-                      <p style={{ fontSize: '0.6rem', letterSpacing: '0.05em', color: 'white', marginTop: '0.5rem' }}>随时准备协助您的探索</p>
-                    </div>
-                  )}
-                  {messages && messages.map((msg, i) => msg && (
-                    <div key={i} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                      <span style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.2)', letterSpacing: '0.1em', marginBottom: '4px' }}>
-                        {msg.role === 'user' ? 'YOU' : 'AI'}
-                      </span>
-                      <div
-                        style={{
-                          background: msg.role === 'user' ? 'rgba(147, 197, 253, 0.15)' : 'rgba(255,255,255,0.05)',
-                          border: `1px solid ${msg.role === 'user' ? 'rgba(147, 197, 253, 0.2)' : 'rgba(255,255,255,0.05)'}`,
-                          padding: '0.8rem 1rem',
-                          borderRadius: '8px',
-                          color: 'rgba(255,255,255,0.9)',
-                          fontSize: '0.85rem',
-                          lineHeight: 1.6,
-                          maxWidth: '85%',
-                          wordWrap: 'break-word',
-                          userSelect: 'text', // 3. 允许选中复制文本
-                          WebkitUserSelect: 'text'
+                <div className="px-6 py-4 flex items-center justify-between" style={{ background: '#191e2b', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setShowHistory(!showHistory)}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                      title="历史对话"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
+                    <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.9)', fontWeight: 500 }}>
+                      {currentSession?.title || '新对话'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    {/* 批量管理按钮 */}
+                    {messages.length > 0 && (
+                      <button
+                        onClick={() => {
+                          if (isBatchMode) {
+                            setIsBatchMode(false)
+                            setSelectedMessageIds(new Set())
+                          } else {
+                            setIsBatchMode(true)
+                          }
                         }}
-                        className="ai-chat-markdown"
+                        style={{ background: 'none', border: 'none', color: isBatchMode ? '#60a5fa' : 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center', fontSize: '0.6rem', gap: '0.2rem' }}
+                        title="批量管理对话"
                       >
-                        {msg.role === 'assistant' ? (
-                          <ReactMarkdown>
-                            {(msg.content || '').replace(/【\d+†source】/g, '')}
-                          </ReactMarkdown>
-                        ) : (
-                          <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content || ''}</div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {loading && (
-                    <div className="flex flex-col items-start">
-                      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.8rem', borderRadius: '8px' }}>
-                        <span className="animate-pulse" style={{ color: 'rgba(147, 197, 253, 0.6)', fontSize: '0.8rem' }}>Thinking...</span>
-                      </div>
-                    </div>
-                  )}
-                  <div ref={messagesEndRef} />
+                        {isBatchMode ? '完成' : '批量'}
+                      </button>
+                    )}
+                    <button
+                      onClick={createNewSession}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                      title="新建对话"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                    </button>
+                    <button
+                      onClick={() => setIsConfiguring(true)}
+                      style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                      title="设置"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    </button>
+                  </div>
                 </div>
 
-                {/* 输入框 */}
-                <div className="p-4" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                  <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                    placeholder="输入您的想法..."
-                    disabled={loading}
-                    style={{
-                      width: '100%',
-                      background: 'rgba(0,0,0,0.3)',
-                      border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '8px',
-                      padding: '0.8rem 1rem',
-                      color: 'white',
-                      fontSize: '0.85rem',
-                      outline: 'none',
-                      transition: 'all 0.3s'
-                    }}
-                    onFocus={(e) => e.target.style.borderColor = 'rgba(147, 197, 253, 0.4)'}
-                    onBlur={(e) => e.target.style.borderColor = 'rgba(255,255,255,0.1)'}
-                  />
+                {/* 主体区域（含历史侧边栏、消息列表、底部输入框） */}
+                <div className="flex-1 relative flex flex-col overflow-hidden">
+                  {/* 历史对话侧边栏 */}
+                  <AnimatePresence>
+                    {showHistory && (
+                      <motion.div
+                        initial={{ x: '-100%' }}
+                        animate={{ x: 0 }}
+                        exit={{ x: '-100%' }}
+                        transition={{ duration: 0.3, ease: 'easeOut' }}
+                        className="absolute inset-y-0 left-0 z-10 flex flex-col"
+                        style={{
+                          width: '200px',
+                          background: '#0d1119', // 历史侧边栏更深的冷色调
+                          borderRight: '1px solid rgba(255,255,255,0.05)',
+                        }}
+                      >
+                        <div className="p-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <span style={{ fontSize: '0.55rem', letterSpacing: '0.15em', color: 'rgba(255,255,255,0.4)' }}>
+                            HISTORY SESSIONS
+                          </span>
+                        </div>
+                        <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
+                          {sessions.map(s => (
+                            <div
+                              key={s.id}
+                              onClick={() => {
+                                setCurrentSessionId(s.id)
+                                setShowHistory(false)
+                              }}
+                              className="group relative cursor-pointer"
+                              style={{
+                                padding: '0.8rem 1rem',
+                                borderBottom: '1px solid rgba(255,255,255,0.02)',
+                                background: s.id === currentSessionId ? '#1e2536' : 'transparent',
+                                transition: 'background 0.2s'
+                              }}
+                            >
+                              <div style={{ fontSize: '0.75rem', color: s.id === currentSessionId ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.6)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                {s.title}
+                              </div>
+                              <div style={{ fontSize: '0.5rem', color: 'rgba(255,255,255,0.3)', marginTop: '0.2rem' }}>
+                                {new Date(s.updatedAt).toLocaleString()}
+                              </div>
+                              <button
+                                onClick={(e) => deleteSession(e, s.id)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                                style={{
+                                  background: 'transparent',
+                                  border: 'none',
+                                  color: 'rgba(255,255,255,0.4)',
+                                  width: '24px',
+                                  height: '24px',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center'
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.color = 'rgba(239, 68, 68, 0.8)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.color = 'rgba(255,255,255,0.4)' }}
+                                title="删除会话"
+                              >
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* 消息列表 */}
+                  <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-8 w-full" style={{ scrollbarWidth: 'none', background: '#121620' }}>
+                    {(!messages || messages.length === 0) && (
+                      <div className="m-auto text-center opacity-30 flex flex-col items-center gap-4">
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" strokeWidth="2"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path><path d="M12 12 2.1 7.1"></path><path d="M12 12l9.9 4.9"></path></svg>
+                        </div>
+                        <div>
+                          <p style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>OASIS AI</p>
+                          <p style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.5)', marginTop: '0.2rem' }}>随时准备协助您的探索</p>
+                        </div>
+                      </div>
+                    )}
+                    {messages && messages.map((msg, i) => msg && (
+                      <div key={msg.id || i} className="group flex items-start gap-4 relative" style={{ maxWidth: '100%', cursor: isBatchMode ? 'pointer' : 'default' }} onClick={() => {
+                        if (isBatchMode && msg.id) {
+                          const newSet = new Set(selectedMessageIds)
+                          if (newSet.has(msg.id)) newSet.delete(msg.id)
+                          else newSet.add(msg.id)
+                          setSelectedMessageIds(newSet)
+                        }
+                      }}>
+                        {/* 批量模式的 Checkbox */}
+                        {isBatchMode && (
+                          <div style={{ flexShrink: 0, width: '20px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <div style={{ width: '16px', height: '16px', borderRadius: '4px', border: `1px solid ${selectedMessageIds.has(msg.id!) ? '#60a5fa' : 'rgba(255,255,255,0.3)'}`, background: selectedMessageIds.has(msg.id!) ? '#60a5fa' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.2s' }}>
+                              {selectedMessageIds.has(msg.id!) && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>}
+                            </div>
+                          </div>
+                        )}
+                        {/* 头像 */}
+                        <div style={{ flexShrink: 0, width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: msg.role === 'user' ? '#059669' : '#1e2536' }}>
+                          {msg.role === 'user' ? (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                          ) : (
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path></svg>
+                          )}
+                        </div>
+
+                        {/* 流式正文区 (不再使用彩色气泡框) */}
+                        <div className="flex flex-col" style={{ maxWidth: 'calc(100% - 64px)', paddingRight: '2rem', paddingTop: '4px' }}>
+                          <div
+                            style={{
+                              color: 'rgba(255,255,255,0.95)',
+                              fontSize: '0.9rem',
+                              lineHeight: 1.7,
+                              wordWrap: 'break-word',
+                              userSelect: 'text',
+                              WebkitUserSelect: 'text'
+                            }}
+                            className="ai-chat-markdown"
+                          >
+                            {msg.role === 'assistant' ? (
+                              <ReactMarkdown>
+                                {(msg.content || '').replace(/【\d+†source】/g, '')}
+                              </ReactMarkdown>
+                            ) : (
+                              <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content || ''}</div>
+                            )}
+                          </div>
+
+                          {/* 底部操作栏 (悬浮浮现，仅在非批量模式下可用) */}
+                          {!isBatchMode && (
+                            <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2 mt-2" style={{ marginLeft: '-4px' }}>
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(msg.content)
+                                }}
+                                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: '4px', display: 'flex', borderRadius: '4px' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)' }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+                                title="复制"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                              </button>
+                              {msg.id && (
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); deleteMessage(msg.id!); }}
+                                  style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', padding: '4px', display: 'flex', borderRadius: '4px' }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; e.currentTarget.style.color = 'rgba(239, 68, 68, 0.8)' }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'rgba(255,255,255,0.4)' }}
+                                  title="删除此消息"
+                                >
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {loading && (
+                      <div className="flex items-start gap-4">
+                        {isBatchMode && <div style={{ width: '20px' }}></div>}
+                        <div style={{ flexShrink: 0, width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1e2536' }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10H12V2z"></path></svg>
+                        </div>
+                        <div style={{ paddingTop: '8px' }}>
+                          <span className="animate-pulse" style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.8rem' }}>Thinking...</span>
+                        </div>
+                      </div>
+                    )}
+                    <div ref={messagesEndRef} />
+                  </div>
+
+                {/* 输入框区域：极简底板，无多余边框 */}
+                  <div className="p-4" style={{ background: '#191e2b', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                    {isBatchMode ? (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.8rem 1rem', background: '#1e1e1e', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                        <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.8)' }}>已选择 {selectedMessageIds.size} 条消息</span>
+                        <div style={{ display: 'flex', gap: '0.8rem' }}>
+                          <button
+                            onClick={() => { setIsBatchMode(false); setSelectedMessageIds(new Set()); }}
+                            style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', color: 'rgba(255,255,255,0.8)', padding: '0.4rem 1rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.75rem' }}
+                          >
+                            取消
+                          </button>
+                          <button
+                            onClick={handleBatchDelete}
+                            disabled={selectedMessageIds.size === 0}
+                            style={{ background: selectedMessageIds.size > 0 ? 'rgba(239, 68, 68, 0.2)' : 'rgba(255,255,255,0.05)', color: selectedMessageIds.size > 0 ? 'rgba(239, 68, 68, 0.9)' : 'rgba(255,255,255,0.3)', border: 'none', padding: '0.4rem 1rem', borderRadius: '4px', cursor: selectedMessageIds.size > 0 ? 'pointer' : 'not-allowed', fontSize: '0.75rem', transition: 'all 0.2s' }}
+                          >
+                            删除所选
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        background: 'transparent',
+                        borderRadius: '8px',
+                        overflow: 'hidden'
+                      }}>
+                        <textarea
+                          value={input}
+                          onChange={(e) => setInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault()
+                              handleSend()
+                            }
+                          }}
+                          placeholder="输入您的想法... (Shift+Enter 换行)"
+                          disabled={loading}
+                          style={{
+                            width: '100%',
+                            minHeight: '44px',
+                            maxHeight: '200px',
+                            background: 'transparent',
+                            border: 'none',
+                            padding: '0.5rem 0',
+                            color: 'rgba(255,255,255,0.95)',
+                            fontSize: '0.9rem',
+                            lineHeight: '1.5',
+                            outline: 'none',
+                            resize: 'none',
+                            fontFamily: 'inherit'
+                          }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '0.5rem' }}>
+                          {/* 左侧工具占位区 */}
+                          <div style={{ display: 'flex', gap: '1rem', color: 'rgba(255,255,255,0.4)' }}>
+                            <button style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }} title="表情">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"></circle><path d="M8 14s1.5 2 4 2 4-2 4-2"></path><line x1="9" y1="9" x2="9.01" y2="9"></line><line x1="15" y1="9" x2="15.01" y2="9"></line></svg>
+                            </button>
+                            <button style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }} title="附件">
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+                            </button>
+                          </div>
+                          {/* 右下角发送按钮 */}
+                          <button
+                            onClick={handleSend}
+                            disabled={!input.trim() || loading}
+                            style={{
+                              background: input.trim() && !loading ? '#059669' : 'rgba(255,255,255,0.05)',
+                              color: input.trim() && !loading ? 'white' : 'rgba(255,255,255,0.3)',
+                              border: 'none',
+                              padding: '0.4rem 1.2rem',
+                              borderRadius: '4px',
+                              fontSize: '0.8rem',
+                              fontWeight: 500,
+                              cursor: input.trim() && !loading ? 'pointer' : 'not-allowed',
+                              transition: 'all 0.2s',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            发送
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
