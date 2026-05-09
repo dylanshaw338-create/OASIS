@@ -9,6 +9,8 @@ export interface ThoughtVersion {
 
 export interface Thought {
   id: string
+  title?: string       // 独立标题（Phase 1 新增）
+  category?: string    // 归属的分区（Phase 1 新增）
   content: string
   createdAt: string    // ISO 8601
   updatedAt: string    // ISO 8601
@@ -19,6 +21,7 @@ export interface Thought {
 
 export interface ThoughtsStore {
   schemaVersion: number
+  categories?: string[] // 自定义分区列表
   thoughts: Thought[]
 }
 

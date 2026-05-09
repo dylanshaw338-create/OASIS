@@ -2,6 +2,8 @@ import { useEffect, useState, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { thoughtsService } from '../../services/dataService'
 import type { Thought, ThoughtsStore } from '../../types/data'
+import ContextMenu, { MenuItem } from '../ui/ContextMenu'
+import PromptDialog from '../ui/PromptDialog'
 
 // ================================================================
 // 主组件
@@ -9,16 +11,21 @@ import type { Thought, ThoughtsStore } from '../../types/data'
 
 export default function ThoughtsView() {
   const [store, setStore] = useState<ThoughtsStore | null>(null)
+  const [selectedCategory, setSelectedCategory] = useState<string>('默认分区')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [isPreview, setIsPreview] = useState(false)
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null)
+  const [promptConfig, setPromptConfig] = useState<{ isOpen: boolean; title: string; defaultValue: string; onConfirm: (val: string) => void; onCancel: () => void } | null>(null)
+
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  // ref 存最新的 store/selectedId/content，给 keydown 闭包用
-  const stateRef = useRef({ store, selectedId, content })
-  useEffect(() => { stateRef.current = { store, selectedId, content } }, [store, selectedId, content])
+  // ref 存最新的 store/selectedId/content/title 给 keydown 闭包用
+  const stateRef = useRef({ store, selectedId, title, content, selectedCategory })
+  useEffect(() => { stateRef.current = { store, selectedId, title, content, selectedCategory } }, [store, selectedId, title, content, selectedCategory])
 
   // ── 初始化 ──
   useEffect(() => {
@@ -27,16 +34,21 @@ export default function ThoughtsView() {
       const loaded = await thoughtsService.load()
 
       if (loaded.thoughts.length === 0) {
-        const first = thoughtsService.createThought('')
+        const first = thoughtsService.createThought('', '默认分区')
         const newStore: ThoughtsStore = { ...loaded, thoughts: [first] }
         await thoughtsService.save(newStore)
         setStore(newStore)
+        setSelectedCategory('默认分区')
         setSelectedId(first.id)
+        setTitle('')
         setContent('')
       } else {
         const sorted = sortThoughts(loaded.thoughts)
         setStore(loaded)
+        const cat = sorted[0]?.category || '默认分区'
+        setSelectedCategory(cat)
         setSelectedId(sorted[0].id)
+        setTitle(sorted[0].title || '')
         setContent(sorted[0].content)
       }
     }
@@ -45,16 +57,21 @@ export default function ThoughtsView() {
 
   // ── 切换预览时聚焦编辑器 ──
   useEffect(() => {
-    if (!isPreview && store) setTimeout(() => textareaRef.current?.focus(), 30)
-  }, [isPreview, store])
+    // 只有在刚刚退出预览模式时，且焦点不在输入框时，才自动聚焦编辑器
+    if (!isPreview) {
+      if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        setTimeout(() => textareaRef.current?.focus(), 30)
+      }
+    }
+  }, [isPreview])
 
   // ── Ctrl+N 新建 ──
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
         e.preventDefault()
-        const { store, selectedId, content } = stateRef.current
-        handleNew(store, selectedId, content)
+        const { store, selectedId, content, title, selectedCategory } = stateRef.current
+        handleNew(store, selectedId, content, title, selectedCategory)
       }
     }
     window.addEventListener('keydown', handleKey)
@@ -66,12 +83,26 @@ export default function ThoughtsView() {
     async (
       currentStore: ThoughtsStore,
       currentId: string,
-      currentContent: string
+      currentContent: string,
+      currentTitle: string
     ): Promise<ThoughtsStore> => {
       try {
         const thought = (currentStore.thoughts || []).find((t) => t.id === currentId)
         if (!thought) return currentStore
+
+        const hasContentChange = thought.content !== currentContent
+        const hasTitleChange = (thought.title || '') !== currentTitle
+
+        if (!hasContentChange && !hasTitleChange) {
+          return currentStore // 如果没有任何改变，直接返回，不触发更新和乱跳
+        }
+
         const captured = thoughtsService.captureVersion(thought, currentContent)
+        captured.title = currentTitle 
+        if (hasTitleChange && !hasContentChange) {
+          captured.updatedAt = new Date().toISOString()
+        }
+
         const newStore: ThoughtsStore = {
           ...currentStore,
           thoughts: (currentStore.thoughts || []).map((t) => (t.id === currentId ? captured : t))
@@ -86,20 +117,58 @@ export default function ThoughtsView() {
     []
   )
 
+  // ── 切换分区 ──
+  const handleCategorySelect = useCallback(async (cat: string) => {
+    const { store, selectedId, content, title, selectedCategory } = stateRef.current
+    if (!store || cat === selectedCategory) return
+
+    // 离开前保存当前编辑的思想版本
+    let latestStore = store
+    if (selectedId) latestStore = await flushAndCapture(store, selectedId, content, title)
+
+    const sorted = sortThoughts(latestStore.thoughts)
+    const thoughtsInCat = sorted.filter(t => (t.category || '默认分区') === cat)
+    
+    if (thoughtsInCat.length > 0) {
+      setStore(latestStore)
+      setSelectedCategory(cat)
+      setSelectedId(thoughtsInCat[0].id)
+      setTitle(thoughtsInCat[0].title || '')
+      setContent(thoughtsInCat[0].content)
+      setIsPreview(false)
+    } else {
+      // 如果分区为空，自动创建一条空白笔记
+      const newThought = thoughtsService.createThought('', cat)
+      const newStore: ThoughtsStore = {
+        ...latestStore,
+        thoughts: [newThought, ...latestStore.thoughts]
+      }
+      await thoughtsService.save(newStore)
+      setStore(newStore)
+      setSelectedCategory(cat)
+      setSelectedId(newThought.id)
+      setTitle('')
+      setContent('')
+      setIsPreview(false)
+    }
+  }, [flushAndCapture])
+
   // ── 选择条目 ──
   const handleSelect = useCallback(
     async (id: string) => {
-      const { store, selectedId, content } = stateRef.current
+      const { store, selectedId, content, title } = stateRef.current
       if (!store || id === selectedId) return
 
       // 离开前保存版本
       let latestStore = store
-      if (selectedId) latestStore = await flushAndCapture(store, selectedId, content)
+      if (selectedId) latestStore = await flushAndCapture(store, selectedId, content, title)
 
       const target = latestStore.thoughts.find((t) => t.id === id)
       if (!target) return
       setStore(latestStore)
+      setSelectedCategory(target.category || '默认分区')
       setSelectedId(id)
+      setTitle(target.title || '')
       setContent(target.content)
       setIsPreview(false)
     },
@@ -109,7 +178,7 @@ export default function ThoughtsView() {
   // ── 删除思想 ──
   const handleDelete = useCallback(
     async (idToDelete: string) => {
-      const { store, selectedId } = stateRef.current
+      const { store, selectedId, selectedCategory } = stateRef.current
       if (!store) return
 
       // 弹窗确认
@@ -123,24 +192,38 @@ export default function ThoughtsView() {
         let newStore: ThoughtsStore
         let newSelectedId: string | null = null
         let newContent = ''
+        let newTitle = ''
 
         if (remainingThoughts.length === 0) {
-          // 如果删空了，强制创建一个新的空白条目
-          const newThought = thoughtsService.createThought('')
+          // 如果删空了整个库，强制创建一个新的空白条目
+          const newThought = thoughtsService.createThought('', selectedCategory)
           newStore = { ...store, thoughts: [newThought] }
           newSelectedId = newThought.id
           newContent = ''
+          newTitle = ''
         } else {
           newStore = { ...store, thoughts: remainingThoughts }
-          // 如果删除的是当前选中的，默认选中排序后的第一个
+          // 如果删除的是当前选中的
           if (selectedId === idToDelete) {
             const sorted = sortThoughts(remainingThoughts)
-            newSelectedId = sorted[0].id
-            newContent = sorted[0].content
+            const catThoughts = sorted.filter(t => (t.category || '默认分区') === selectedCategory)
+            if (catThoughts.length > 0) {
+              newSelectedId = catThoughts[0].id
+              newContent = catThoughts[0].content
+              newTitle = catThoughts[0].title || ''
+            } else {
+              // 如果当前分区空了，自动创建一条
+              const newThought = thoughtsService.createThought('', selectedCategory)
+              newStore = { ...store, thoughts: [newThought, ...remainingThoughts] }
+              newSelectedId = newThought.id
+              newContent = ''
+              newTitle = ''
+            }
           } else {
             // 删除的不是当前选中的，保持当前选中状态
             newSelectedId = selectedId
             newContent = stateRef.current.content
+            newTitle = stateRef.current.title
           }
         }
 
@@ -149,6 +232,7 @@ export default function ThoughtsView() {
         if (newSelectedId !== selectedId) {
           setSelectedId(newSelectedId)
           setContent(newContent)
+          setTitle(newTitle)
           setIsPreview(false)
         }
       } catch (err) {
@@ -162,17 +246,19 @@ export default function ThoughtsView() {
     async (
       currentStore: ThoughtsStore | null,
       currentSelectedId: string | null,
-      currentContent: string
+      currentContent: string,
+      currentTitle: string,
+      targetCategory: string = '默认分区'
     ) => {
       try {
         // 核心修复点：即使 currentStore 为空（如由于某些原因没加载出来），也允许创建
-        let latestStore = currentStore || { schemaVersion: 1, thoughts: [] }
+        let latestStore = currentStore || { schemaVersion: 1, categories: ['默认分区'], thoughts: [] }
         
         if (currentSelectedId) {
-          latestStore = await flushAndCapture(latestStore, currentSelectedId, currentContent)
+          latestStore = await flushAndCapture(latestStore, currentSelectedId, currentContent, currentTitle)
         }
 
-        const newThought = thoughtsService.createThought('')
+        const newThought = thoughtsService.createThought('', targetCategory)
         const newStore: ThoughtsStore = {
           ...latestStore,
           thoughts: [newThought, ...(latestStore.thoughts || [])]
@@ -180,7 +266,9 @@ export default function ThoughtsView() {
         
         await thoughtsService.save(newStore)
         setStore(newStore)
+        setSelectedCategory(targetCategory)
         setSelectedId(newThought.id)
+        setTitle('')
         setContent('')
         setIsPreview(false)
         setTimeout(() => textareaRef.current?.focus(), 50)
@@ -192,42 +280,315 @@ export default function ThoughtsView() {
     [flushAndCapture]
   )
 
-  // ── 内容变更（防抖自动保存） ──
-  const handleChange = useCallback(
+  // ── 内容与标题变更（防抖自动保存） ──
+  const handleContentChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const value = e.target.value
       setContent(value)
-      setSaveStatus('saving')
-
-      if (saveTimer.current) clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(async () => {
-        const { store, selectedId } = stateRef.current
-        if (!store || !selectedId) return
-        const thought = store.thoughts.find((t) => t.id === selectedId)
-        if (!thought) return
-        const updated = thoughtsService.updateThought(thought, value)
-        const newStore: ThoughtsStore = {
-          ...store,
-          thoughts: store.thoughts.map((t) => (t.id === selectedId ? updated : t))
-        }
-        await thoughtsService.save(newStore)
-        setStore(newStore)
-        setSaveStatus('saved')
-        setTimeout(() => setSaveStatus('idle'), 1500)
-      }, 500)
+      triggerAutoSave(title, value)
     },
-    []
+    [title] // 需要最新 title，所以加依赖，或者使用 stateRef。但 triggerAutoSave 会从参数拿
   )
+
+  const handleTitleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const value = e.target.value
+      setTitle(value)
+      triggerAutoSave(value, content)
+    },
+    [content]
+  )
+
+  const triggerAutoSave = useCallback((newTitle: string, newContent: string) => {
+    setSaveStatus('saving')
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(async () => {
+      const { store, selectedId } = stateRef.current
+      if (!store || !selectedId) return
+      const thought = store.thoughts.find((t) => t.id === selectedId)
+      if (!thought) return
+      const updated = thoughtsService.updateThought(thought, newContent)
+      updated.title = newTitle
+      const newStore: ThoughtsStore = {
+        ...store,
+        thoughts: store.thoughts.map((t) => (t.id === selectedId ? updated : t))
+      }
+      await thoughtsService.save(newStore)
+      setStore(newStore)
+      setSaveStatus('saved')
+      setTimeout(() => setSaveStatus('idle'), 1500)
+    }, 500)
+  }, [])
 
   // ── 衍生状态 ──
   const sorted = store ? sortThoughts(store.thoughts) : []
+  const filteredThoughts = sorted.filter(t => (t.category || '默认分区') === selectedCategory)
+  const categories = store?.categories || ['默认分区']
 
-  // 移除了提前 return LoadingView，避免完全阻塞界面
-  // if (!store) return <LoadingView />
+  // ── 菜单处理函数 ──
+  const handleContextMenuPartition = (e: React.MouseEvent, cat: string) => {
+    e.preventDefault()
+    setContextMenu({
+      x: e.pageX,
+      y: e.pageY,
+      items: [
+        {
+          label: '重命名分区',
+          onClick: () => {
+            setPromptConfig({
+              isOpen: true,
+              title: '输入新的分区名称:',
+              defaultValue: cat,
+              onConfirm: async (newName) => {
+                setPromptConfig(null)
+                if (!newName || newName.trim() === '' || newName === cat || categories.includes(newName)) return
+                if (!store) return
+                const newStore: ThoughtsStore = {
+                  ...store,
+                  categories: store.categories!.map(c => c === cat ? newName : c),
+                  thoughts: store.thoughts.map(t => (t.category || '默认分区') === cat ? { ...t, category: newName } : t)
+                }
+                await thoughtsService.save(newStore)
+                setStore(newStore)
+                if (selectedCategory === cat) setSelectedCategory(newName)
+              },
+              onCancel: () => setPromptConfig(null)
+            })
+          }
+        },
+        {
+          label: '删除分区',
+          danger: true,
+          onClick: async () => {
+            if (cat === '默认分区') {
+              alert('“默认分区”不能删除。')
+              return
+            }
+            if (!confirm(`确定要删除分区 "${cat}" 吗？\n其中的思想将被移动到“默认分区”。`)) return
+            if (!store) return
+
+            // 离开前保存当前编辑的思想版本
+            const { selectedId, content, title } = stateRef.current
+            let latestStore = store
+            if (selectedId) latestStore = await flushAndCapture(store, selectedId, content, title)
+
+            const newStore: ThoughtsStore = {
+              ...latestStore,
+              categories: latestStore.categories!.filter(c => c !== cat),
+              thoughts: latestStore.thoughts.map(t => (t.category || '默认分区') === cat ? { ...t, category: '默认分区' } : t)
+            }
+            await thoughtsService.save(newStore)
+            setStore(newStore)
+            if (selectedCategory === cat) {
+              setSelectedCategory('默认分区')
+              // 自动切换焦点到默认分区的第一条笔记
+              const sorted = sortThoughts(newStore.thoughts)
+              const defaultThoughts = sorted.filter(t => (t.category || '默认分区') === '默认分区')
+              if (defaultThoughts.length > 0) {
+                setSelectedId(defaultThoughts[0].id)
+                setTitle(defaultThoughts[0].title || '')
+                setContent(defaultThoughts[0].content)
+              }
+            }
+          }
+        }
+      ]
+    })
+  }
+
+  const handleContextMenuThought = (e: React.MouseEvent, t: Thought) => {
+    e.preventDefault()
+    const menuItems: MenuItem[] = [
+      {
+        label: '重命名',
+        onClick: () => {
+          setPromptConfig({
+            isOpen: true,
+            title: '输入新的标题:',
+            defaultValue: t.title || '',
+            onConfirm: async (newTitle) => {
+              setPromptConfig(null)
+              if (!store) return
+              const newStore: ThoughtsStore = {
+                ...store,
+                thoughts: store.thoughts.map(thought => thought.id === t.id ? { ...thought, title: newTitle } : thought)
+              }
+              await thoughtsService.save(newStore)
+              setStore(newStore)
+              if (t.id === selectedId) {
+                setTitle(newTitle)
+              }
+            },
+            onCancel: () => setPromptConfig(null)
+          })
+        }
+      },
+      {
+        label: '删除思想',
+        danger: true,
+        onClick: () => handleDelete(t.id)
+      }
+    ]
+    
+    if (categories.length > 1) {
+      categories.forEach(cat => {
+        if (cat !== (t.category || '默认分区')) {
+          menuItems.push({
+            label: `移动到: ${cat}`,
+            onClick: async () => {
+              if (!store) return
+              const newStore: ThoughtsStore = {
+                ...store,
+                thoughts: store.thoughts.map(thought => thought.id === t.id ? { ...thought, category: cat } : thought)
+              }
+              await thoughtsService.save(newStore)
+              setStore(newStore)
+              // 如果移动的是当前选中的思想，跟随它跳转到新分区
+              if (t.id === selectedId) {
+                setSelectedCategory(cat)
+              }
+            }
+          })
+        }
+      })
+    }
+    
+    setContextMenu({
+      x: e.pageX,
+      y: e.pageY,
+      items: menuItems
+    })
+  }
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%' }}>
-      {/* ════ 左侧面板：玻璃态侧边栏 ════ */}
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenu.items}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {promptConfig && (
+        <PromptDialog
+          isOpen={promptConfig.isOpen}
+          title={promptConfig.title}
+          defaultValue={promptConfig.defaultValue}
+          onConfirm={promptConfig.onConfirm}
+          onCancel={promptConfig.onCancel}
+        />
+      )}
+
+      {/* ════ 列 1：分区侧边栏 ════ */}
+      <aside
+        className="glass-panel"
+        style={{
+          width: '160px',
+          flexShrink: 0,
+          border: 'none',
+          borderRight: '1px solid rgba(147, 197, 253, 0.05)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          background: 'rgba(5, 10, 20, 0.3)'
+        }}
+      >
+        <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+          <span style={{ fontSize: '0.55rem', letterSpacing: '0.15em', color: 'rgba(255,255,255,0.3)' }}>
+            PARTITIONS
+          </span>
+        </div>
+        
+        <div style={{ flex: 1, overflowY: 'auto' }} className="thought-list">
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => handleCategorySelect(cat)}
+              onContextMenu={(e) => handleContextMenuPartition(e, cat)}
+              style={{
+                width: '100%',
+                padding: '0.7rem 1rem',
+                background: selectedCategory === cat ? 'rgba(200,228,252,0.08)' : 'transparent',
+                border: 'none',
+                borderLeft: selectedCategory === cat
+                  ? '3px solid rgba(200,228,252,0.5)'
+                  : '3px solid transparent',
+                cursor: 'pointer',
+                textAlign: 'left',
+                color: selectedCategory === cat ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.5)',
+                fontSize: '0.65rem',
+                letterSpacing: '0.05em',
+                transition: 'all 0.2s',
+                textShadow: selectedCategory === cat ? '0 0 8px rgba(255,255,255,0.2)' : 'none'
+              }}
+              onMouseEnter={(e) => {
+                if (selectedCategory !== cat) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'
+              }}
+              onMouseLeave={(e) => {
+                if (selectedCategory !== cat) e.currentTarget.style.background = 'transparent'
+              }}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => {
+            setPromptConfig({
+              isOpen: true,
+              title: '输入新分区名称:',
+              defaultValue: '',
+              onConfirm: async (newCat) => {
+                setPromptConfig(null)
+                if (!newCat || newCat.trim() === '' || categories.includes(newCat)) return
+                if (!store) return
+                
+                // 离开前保存当前编辑的思想版本
+                const { selectedId, content, title } = stateRef.current
+                let latestStore = store
+                if (selectedId) latestStore = await flushAndCapture(store, selectedId, content, title)
+
+                // 创建新分区并自动创建一条空白笔记
+                const newThought = thoughtsService.createThought('', newCat)
+                const newStore: ThoughtsStore = {
+                  ...latestStore,
+                  categories: [...(latestStore.categories || ['默认分区']), newCat],
+                  thoughts: [newThought, ...latestStore.thoughts]
+                }
+                await thoughtsService.save(newStore)
+                setStore(newStore)
+                setSelectedCategory(newCat)
+                setSelectedId(newThought.id)
+                setTitle('')
+                setContent('')
+                setIsPreview(false)
+              },
+              onCancel: () => setPromptConfig(null)
+            })
+          }}
+          style={{
+            padding: '0.8rem 1rem',
+            background: 'transparent',
+            border: 'none',
+            borderTop: '1px solid rgba(255,255,255,0.05)',
+            cursor: 'pointer',
+            color: 'rgba(200,228,252,0.4)',
+            fontSize: '0.55rem',
+            letterSpacing: '0.1em',
+            textAlign: 'left',
+            transition: 'color 0.2s'
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = 'rgba(200,228,252,0.8)')}
+          onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(200,228,252,0.4)')}
+        >
+          + NEW SECTION
+        </button>
+      </aside>
+
+      {/* ════ 列 2：思想列表 ════ */}
       <aside
         className="glass-panel"
         style={{
@@ -244,8 +605,8 @@ export default function ThoughtsView() {
         {/* 新建按钮 */}
         <button
           onClick={() => {
-            const { store, selectedId, content } = stateRef.current
-            handleNew(store, selectedId, content)
+            const { store, selectedId, content, title, selectedCategory } = stateRef.current
+            handleNew(store, selectedId, content, title, selectedCategory)
           }}
           style={{
             width: '100%',
@@ -269,31 +630,39 @@ export default function ThoughtsView() {
 
         {/* 条目列表 */}
         <div style={{ flex: 1, overflowY: 'auto' }} className="thought-list">
-          {sorted.map((t) => (
-            <ThoughtItem
-              key={t.id}
-              thought={t}
-              isActive={t.id === selectedId}
-              onClick={() => handleSelect(t.id)}
-            />
+          {filteredThoughts.length === 0 && (
+            <div style={{ padding: '2rem 1rem', textAlign: 'center', color: 'rgba(255,255,255,0.2)', fontSize: '0.6rem' }}>
+              此分区为空
+            </div>
+          )}
+          {filteredThoughts.map((t) => (
+            <div key={t.id} onContextMenu={(e) => handleContextMenuThought(e, t)}>
+              <ThoughtItem
+                thought={t}
+                isActive={t.id === selectedId}
+                onClick={() => handleSelect(t.id)}
+              />
+            </div>
           ))}
         </div>
       </aside>
 
-      {/* ════ 右侧编辑区 ════ */}
-      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column' }}>
-        {/* 顶部工具栏 */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '1.2rem',
-            right: '2rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1.2rem',
-            zIndex: 10
-          }}
-        >
+      {/* ════ 列 3：编辑区 ════ */}
+      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', WebkitAppRegion: 'no-drag' }}>
+        {selectedId ? (
+          <>
+            {/* 顶部工具栏 */}
+            <div
+              style={{
+                position: 'absolute',
+                top: '1.2rem',
+                right: '2rem',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '1.2rem',
+                zIndex: 10
+              }}
+            >
           {/* 保存状态 */}
           <span
             style={{
@@ -355,34 +724,71 @@ export default function ThoughtsView() {
         </div>
 
         {/* 编辑器 / 预览 */}
-        {isPreview ? (
-          <MarkdownPreview content={content} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '4rem 15% 4rem 15%', overflow: 'hidden' }}>
+          {!isPreview && (
+            <input
+              type="text"
+              value={title}
+              onChange={handleTitleChange}
+              placeholder="无标题"
+              spellCheck={false}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: 'rgba(255,255,255,0.95)',
+                fontSize: '1.8rem',
+                fontWeight: 300,
+                letterSpacing: '0.05em',
+                marginBottom: '1rem',
+                padding: '0',
+                textShadow: '0 0 10px rgba(255,255,255,0.2)',
+                WebkitAppRegion: 'no-drag',
+                WebkitUserSelect: 'text',
+                userSelect: 'text',
+                pointerEvents: 'auto'
+              }}
+            />
+          )}
+          {isPreview ? (
+            <div style={{ flex: 1, overflowY: 'auto', marginLeft: '-15%', marginRight: '-15%', WebkitAppRegion: 'no-drag', WebkitUserSelect: 'text', userSelect: 'text', pointerEvents: 'auto' }}>
+              <MarkdownPreview content={title ? `# ${title}\n\n${content}` : content} />
+            </div>
+          ) : (
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={handleContentChange}
+              placeholder="记录此刻的思维..."
+              spellCheck={false}
+              style={{
+                flex: 1,
+                width: '100%',
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                resize: 'none',
+                color: 'rgba(255,255,255,0.85)',
+                fontSize: '1.05rem',
+                lineHeight: '2.2',
+                letterSpacing: '0.03em',
+                fontFamily: "ui-monospace, 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace",
+                fontWeight: 300,
+                caretColor: 'rgba(147, 197, 253, 0.8)',
+                overflowY: 'auto',
+                WebkitAppRegion: 'no-drag',
+                WebkitUserSelect: 'text',
+                userSelect: 'text',
+                pointerEvents: 'auto'
+              }}
+            />)}
+            </div>
+          </>
         ) : (
-          <textarea
-            ref={textareaRef}
-            value={content}
-            onChange={handleChange}
-            placeholder="# 记录此刻的思维..."
-            spellCheck={false}
-            style={{
-              flex: 1,
-              width: '100%',
-              padding: '4rem 20% 4rem 15%',
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              resize: 'none',
-              color: 'rgba(255,255,255,0.95)',
-              fontSize: '1.1rem',
-              lineHeight: '2.2',
-              letterSpacing: '0.03em',
-              fontFamily: "ui-monospace, 'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, Consolas, monospace",
-              fontWeight: 300,
-              caretColor: 'rgba(147, 197, 253, 0.8)',
-              overflowY: 'auto',
-              textShadow: '0 0 1px rgba(255,255,255,0.1)'
-            }}
-          />
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)', fontSize: '0.8rem', letterSpacing: '0.1em' }}>
+            没有选择任何笔记
+          </div>
         )}
       </div>
 
@@ -442,7 +848,7 @@ function ThoughtItem({
   const date = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
   const time = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   const firstLine = thought.content.split('\n').find((l) => l.trim()) ?? ''
-  const preview = firstLine.replace(/^#+\s*/, '').trim().slice(0, 20) || '空白'
+  const preview = thought.title || firstLine.replace(/^#+\s*/, '').trim() || '空白'
 
   return (
     <button
@@ -486,7 +892,13 @@ function ThoughtItem({
           lineHeight: 1.5,
           fontWeight: isActive ? 400 : 300,
           transition: 'all 0.3s ease',
-          textShadow: isActive ? '0 0 10px rgba(255,255,255,0.2)' : 'none'
+          textShadow: isActive ? '0 0 10px rgba(255,255,255,0.2)' : 'none',
+          wordBreak: 'break-word',
+          whiteSpace: 'pre-wrap',
+          display: '-webkit-box',
+          WebkitLineClamp: 3,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden'
         }}
       >
         {preview}
