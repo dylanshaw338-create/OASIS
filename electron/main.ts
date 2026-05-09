@@ -160,7 +160,7 @@ app.whenReady().then(() => {
         throw new Error('API 返回了非法的 JSON 格式。可能是网络代理问题或服务端错误。')
       }
 
-      if (!response.ok) {
+      if (!response.ok || (data?.base_resp && data.base_resp.status_code !== 0)) {
         throw new Error(data?.base_resp?.status_msg || `HTTP Error: ${response.status}`)
       }
       return data

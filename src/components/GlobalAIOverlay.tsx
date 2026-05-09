@@ -38,7 +38,14 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       const history = await window.electronAPI.data.read('ai_history.json')
       // 增加安全防范，如果 history 不是数组或者不存在，给个默认空数组
       if (history && Array.isArray(history)) {
-        setMessages(history)
+        // 过滤掉 null 元素和不合法的消息，并剔除多余的属性
+        const sanitizedHistory = history
+          .filter(msg => msg && msg.role && msg.content)
+          .map(msg => ({
+            role: msg.role,
+            content: msg.content
+          }))
+        setMessages(sanitizedHistory)
       } else {
         setMessages([])
       }
