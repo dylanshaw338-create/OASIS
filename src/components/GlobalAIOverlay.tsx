@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import ReactMarkdown from 'react-markdown'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -289,6 +290,16 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
             ) : (
               /* 聊天界面 */
               <div className="flex flex-col h-full">
+                <style>{`
+                  .ai-chat-markdown p { margin-bottom: 0.5em; }
+                  .ai-chat-markdown p:last-child { margin-bottom: 0; }
+                  .ai-chat-markdown strong { color: #fff; font-weight: 600; text-shadow: 0 0 8px rgba(255,255,255,0.4); }
+                  .ai-chat-markdown ul { list-style-type: disc; padding-left: 1.5em; margin-bottom: 0.5em; }
+                  .ai-chat-markdown ol { list-style-type: decimal; padding-left: 1.5em; margin-bottom: 0.5em; }
+                  .ai-chat-markdown li { margin-bottom: 0.25em; }
+                  .ai-chat-markdown a { color: #93c5fd; text-decoration: underline; text-underline-offset: 2px; }
+                  .ai-chat-markdown code { background: rgba(255,255,255,0.1); padding: 0.1em 0.3em; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+                `}</style>
                 {/* 顶栏 */}
                 <div className="px-6 py-4 flex items-center justify-between" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                   <span style={{ fontSize: '0.65rem', letterSpacing: '0.2em', color: 'rgba(147, 197, 253, 0.8)', fontWeight: 300 }}>
@@ -326,12 +337,18 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
                           lineHeight: 1.6,
                           maxWidth: '85%',
                           wordWrap: 'break-word',
-                          whiteSpace: 'pre-wrap',
                           userSelect: 'text', // 3. 允许选中复制文本
                           WebkitUserSelect: 'text'
                         }}
+                        className="ai-chat-markdown"
                       >
-                        {msg.content || ''}
+                        {msg.role === 'assistant' ? (
+                          <ReactMarkdown>
+                            {(msg.content || '').replace(/【\d+†source】/g, '')}
+                          </ReactMarkdown>
+                        ) : (
+                          <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content || ''}</div>
+                        )}
                       </div>
                     </div>
                   ))}
