@@ -117,7 +117,7 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
 
       // 将 System Prompt 塞在最前面
       const payloadMessages = [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', name: 'system', content: systemPrompt },
         ...newMessages
       ]
 

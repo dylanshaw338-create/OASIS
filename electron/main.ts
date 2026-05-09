@@ -147,7 +147,8 @@ app.whenReady().then(() => {
             {
               type: 'web_search'
             }
-          ]
+          ],
+          tool_choice: 'auto'
         }),
         signal: controller.signal
       })
