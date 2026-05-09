@@ -123,7 +123,10 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       const response = await window.electronAPI.ai.chat(config, payloadMessages)
       
       if (response && response.choices && response.choices.length > 0) {
-        const aiMessage = response.choices[0].message
+        const choice = response.choices[0]
+        // MiniMax 开启联网搜索时，可能会返回 messages 数组而不是单个 message
+        const aiMessage = choice.message || (choice.messages && choice.messages.length > 0 ? choice.messages[choice.messages.length - 1] : null)
+        
         if (aiMessage) {
           // 核心修复：只保留 role 和 content，剔除 tool_calls 等可能导致上下文序列报错的特殊字段
           const cleanMessage: Message = {
