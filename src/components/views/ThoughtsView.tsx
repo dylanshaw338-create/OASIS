@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
+import { motion } from 'framer-motion'
 import { thoughtsService } from '../../services/dataService'
 import type { Thought, ThoughtsStore } from '../../types/data'
 import ContextMenu, { MenuItem } from '../ui/ContextMenu'
@@ -490,7 +491,7 @@ export default function ThoughtsView() {
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          background: 'rgba(0,0,0,0.2)'
+          background: 'transparent'
         }}
       >
         <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -505,30 +506,36 @@ export default function ThoughtsView() {
               key={cat}
               onClick={() => handleCategorySelect(cat)}
               onContextMenu={(e) => handleContextMenuPartition(e, cat)}
+              className="group relative"
               style={{
                 width: '100%',
-                padding: '0.7rem 1rem',
-                background: selectedCategory === cat ? 'rgba(200,228,252,0.08)' : 'transparent',
+                padding: '0.8rem 1.2rem',
+                background: 'transparent',
                 border: 'none',
-                borderLeft: selectedCategory === cat
-                  ? '3px solid rgba(200,228,252,0.5)'
-                  : '3px solid transparent',
                 cursor: 'pointer',
                 textAlign: 'left',
-                color: selectedCategory === cat ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.5)',
-                fontSize: '0.65rem',
+                color: selectedCategory === cat ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.4)',
+                fontSize: '0.75rem',
                 letterSpacing: '0.05em',
-                transition: 'all 0.2s',
-                textShadow: selectedCategory === cat ? '0 0 8px rgba(255,255,255,0.2)' : 'none'
-              }}
-              onMouseEnter={(e) => {
-                if (selectedCategory !== cat) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'
-              }}
-              onMouseLeave={(e) => {
-                if (selectedCategory !== cat) e.currentTarget.style.background = 'transparent'
+                transition: 'all 0.3s'
               }}
             >
-              {cat}
+              {/* 极简左侧激活指示器 */}
+              {selectedCategory === cat && (
+                <motion.div
+                  layoutId="category-active-indicator"
+                  className="absolute left-0 top-0 bottom-0 w-[2px] bg-amber-500"
+                  style={{
+                    boxShadow: '0 0 12px rgba(217, 119, 6, 0.8)'
+                  }}
+                />
+              )}
+              
+              {/* Hover 底色 */}
+              <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" style={{ zIndex: -1 }} />
+              {selectedCategory === cat && <div className="absolute inset-0 bg-white/5" style={{ zIndex: -1 }} />}
+
+              <span style={{ position: 'relative', zIndex: 1 }}>{cat}</span>
             </button>
           ))}
         </div>
@@ -589,13 +596,13 @@ export default function ThoughtsView() {
       {/* ════ 列 2：思想列表 ════ */}
       <aside
         style={{
-          width: '260px',
+          width: '280px',
           flexShrink: 0,
           borderRight: '1px solid rgba(255,255,255,0.03)',
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
-          background: 'rgba(0,0,0,0.1)'
+          background: 'transparent'
         }}
       >
         {/* 新建按钮 */}
@@ -646,7 +653,7 @@ export default function ThoughtsView() {
       </aside>
 
       {/* ════ 列 3：编辑区 ════ */}
-      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', WebkitAppRegion: 'no-drag' }}>
+      <div style={{ flex: 1, position: 'relative', display: 'flex', flexDirection: 'column', WebkitAppRegion: 'no-drag' as any }}>
         {selectedId ? (
           <>
             {/* 顶部工具栏 */}
@@ -742,7 +749,7 @@ export default function ThoughtsView() {
                 letterSpacing: '0.02em',
                 marginBottom: '1rem',
                 padding: '0',
-                WebkitAppRegion: 'no-drag',
+                WebkitAppRegion: 'no-drag' as any,
                 WebkitUserSelect: 'text',
                 userSelect: 'text',
                 pointerEvents: 'auto',
@@ -751,7 +758,7 @@ export default function ThoughtsView() {
             />
           )}
           {isPreview ? (
-            <div style={{ flex: 1, overflowY: 'auto', marginLeft: '-15%', marginRight: '-15%', WebkitAppRegion: 'no-drag', WebkitUserSelect: 'text', userSelect: 'text', pointerEvents: 'auto' }}>
+            <div style={{ flex: 1, overflowY: 'auto', marginLeft: '-15%', marginRight: '-15%', WebkitAppRegion: 'no-drag' as any, WebkitUserSelect: 'text', userSelect: 'text', pointerEvents: 'auto' }}>
               <MarkdownPreview content={title ? `# ${title}\n\n${content}` : content} />
             </div>
           ) : (
@@ -777,7 +784,7 @@ export default function ThoughtsView() {
                 fontWeight: 300,
                 caretColor: 'rgba(147, 197, 253, 0.8)',
                 overflowY: 'auto',
-                WebkitAppRegion: 'no-drag',
+                WebkitAppRegion: 'no-drag' as any,
                 WebkitUserSelect: 'text',
                 userSelect: 'text',
                 pointerEvents: 'auto',
@@ -862,32 +869,38 @@ function ThoughtItem({
   return (
     <button
       onClick={onClick}
+      className="group relative"
       style={{
         width: '100%',
-        padding: '0.7rem 1rem',
-        background: isActive ? 'rgba(200,228,252,0.04)' : 'transparent',
+        padding: '1rem 1.5rem',
+        background: 'transparent',
         border: 'none',
-        borderLeft: isActive
-          ? '2px solid rgba(200,228,252,0.3)'
-          : '2px solid transparent',
-        borderBottom: '1px solid rgba(255,255,255,0.03)',
         cursor: 'pointer',
         textAlign: 'left',
-        transition: 'all 0.15s ease'
-      }}
-      onMouseEnter={(e) => {
-        if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive) e.currentTarget.style.background = 'transparent'
+        transition: 'all 0.3s ease'
       }}
     >
+      {/* 极简左侧激活指示器 */}
+      {isActive && (
+        <motion.div
+          layoutId="thought-active-indicator"
+          className="absolute left-0 top-0 bottom-0 w-[2px] bg-amber-500"
+          style={{
+            boxShadow: '0 0 12px rgba(217, 119, 6, 0.8)'
+          }}
+        />
+      )}
+      
+      {/* Hover 底色 */}
+      <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" style={{ zIndex: -1 }} />
+      {isActive && <div className="absolute inset-0 bg-white/5" style={{ zIndex: -1 }} />}
+
       <p
         style={{
-          fontSize: '0.48rem',
+          fontSize: '0.55rem',
           letterSpacing: '0.15em',
-          color: isActive ? 'rgba(147, 197, 253, 0.6)' : 'rgba(147, 197, 253, 0.3)',
-          marginBottom: '0.35rem',
+          color: isActive ? 'rgba(217, 119, 6, 0.8)' : 'rgba(255,255,255,0.3)',
+          marginBottom: '0.4rem',
           transition: 'color 0.3s'
         }}
       >
@@ -895,13 +908,12 @@ function ThoughtItem({
       </p>
       <p
         style={{
-          fontSize: '0.7rem',
-          color: isActive ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.4)',
-          letterSpacing: '0.04em',
-          lineHeight: 1.5,
+          fontSize: '0.8rem',
+          color: isActive ? 'rgba(255,255,255,0.95)' : 'rgba(255,255,255,0.5)',
+          letterSpacing: '0.02em',
+          lineHeight: 1.6,
           fontWeight: isActive ? 400 : 300,
           transition: 'all 0.3s ease',
-          textShadow: isActive ? '0 0 10px rgba(255,255,255,0.2)' : 'none',
           wordBreak: 'break-word',
           whiteSpace: 'pre-wrap',
           display: '-webkit-box',

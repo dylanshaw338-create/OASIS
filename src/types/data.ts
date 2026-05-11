@@ -25,16 +25,26 @@ export interface ThoughtsStore {
   thoughts: Thought[]
 }
 
-// 预留：论文
+// 统一后的 Paper (论文/文档) 类型
 export interface Paper {
   id: string
+  name: string
+  originalPath: string
+  localPath: string
+  size: number
+  type: string
+  importedAt: number
+  
+  // 学术元数据
   title: string
   authors: string[]
   abstract: string
-  url: string
-  addedAt: string
   tags: string[]
-  linkedIds: string[]
+  
+  // 用户产生的数据
+  userNotes: string
+  aiSummary: string
+  linkedIds?: string[]
 }
 
 export interface PapersStore {

@@ -1,8 +1,16 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
 import { join, basename, extname } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, statSync } from 'fs'
 import crypto from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+
+// 修复：由于 pdf-parse 是 CommonJS 模块，在 ESBuild/Vite 环境中直接 import 可能会导致 default 导出丢失
+const pdfParse = require('pdf-parse')
+
+// 在 app.whenReady() 之前注册自定义协议特权
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-file', privileges: { secure: true, standard: true, supportFetchAPI: true, corsEnabled: true } }
+])
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
@@ -15,7 +23,8 @@ function createWindow(): void {
     autoHideMenuBar: true,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
+      sandbox: false,
+      webSecurity: false // 允许 iframe 读取本地 file:// 协议文件
     }
   })
 
@@ -38,6 +47,18 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.futurehci.app')
+
+  // 注册 local-file:// 协议以支持渲染进程加载本地 PDF 等文件
+  protocol.handle('local-file', (request) => {
+    // 处理带参数或哈希的 URL，只取真正的路径部分
+    const url = request.url.replace('local-file://', '').split('?')[0].split('#')[0]
+    const decodedPath = decodeURIComponent(url)
+    if (process.platform === 'win32') {
+      // 移除前导斜杠 (e.g. /C:/path -> C:/path)
+      return net.fetch('file://' + decodedPath.replace(/^\//, ''))
+    }
+    return net.fetch('file://' + decodedPath)
+  })
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
@@ -89,11 +110,11 @@ app.whenReady().then(() => {
       const kbDir = join(app.getPath('userData'), 'knowledge_base')
       if (!existsSync(kbDir)) mkdirSync(kbDir, { recursive: true })
 
-      const importedFiles = filePaths.map(filePath => {
+      // 由于需要异步解析 PDF 提取元信息，这里使用 Promise.all
+      const importedFiles = await Promise.all(filePaths.map(async (filePath) => {
         const name = basename(filePath)
         const destPath = join(kbDir, name)
         
-        // 避免覆盖同名文件，如果存在则添加时间戳
         let finalDestPath = destPath
         let finalName = name
         if (existsSync(destPath)) {
@@ -106,21 +127,63 @@ app.whenReady().then(() => {
         copyFileSync(filePath, finalDestPath)
         const stats = statSync(finalDestPath)
 
+        // 尝试自动提取元信息
+        let extractedTitle = basename(finalName, extname(finalName))
+        let extractedAuthors: string[] = []
+
+        if (extname(finalName).toLowerCase() === '.pdf') {
+          try {
+            const dataBuffer = readFileSync(finalDestPath)
+            const parsed = await pdfParse(dataBuffer)
+            // 尝试从 PDF metadata 中提取
+            if (parsed.info) {
+              if (parsed.info.Title && parsed.info.Title.trim() !== '') {
+                extractedTitle = parsed.info.Title.trim()
+              }
+              if (parsed.info.Author && parsed.info.Author.trim() !== '') {
+                // 有些作者是用逗号或分号隔开的
+                extractedAuthors = parsed.info.Author.split(/[,;]/).map((a: string) => a.trim()).filter((a: string) => a)
+              }
+            }
+          } catch (e) {
+            console.error('Failed to extract metadata from PDF', e)
+          }
+        }
+
         return {
           id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
           name: finalName,
           originalPath: filePath,
-          localPath: finalDestPath,
+          localPath: finalDestPath, // ⚠️ Chromium 内置 PDF 阅读器需要绝对路径
           size: stats.size,
           type: extname(finalName).substring(1) || 'unknown',
-          importedAt: Date.now()
+          importedAt: Date.now(),
+          title: extractedTitle,
+          authors: extractedAuthors,
+          tags: [],
+          abstract: '',
+          userNotes: '',
+          aiSummary: ''
         }
-      })
+      }))
 
       return importedFiles
     } catch (e) {
       console.error('[knowledge:import]', e)
       return null
+    }
+  })
+
+  // IPC：解析 PDF 文本
+  ipcMain.handle('knowledge:parse-pdf', async (_event, localPath: string) => {
+    try {
+      if (!existsSync(localPath)) throw new Error('File not found')
+      const dataBuffer = readFileSync(localPath)
+      const data = await pdfParse(dataBuffer)
+      return data.text || ''
+    } catch (err: any) {
+      console.error('[knowledge:parse-pdf]', err)
+      throw new Error(`PDF 解析失败: ${err.message}`)
     }
   })
 

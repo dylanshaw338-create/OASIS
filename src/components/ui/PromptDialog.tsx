@@ -62,7 +62,7 @@ export default function PromptDialog({
             background: 'rgba(0, 0, 0, 0.4)',
             backdropFilter: 'blur(8px)',
             WebkitBackdropFilter: 'blur(8px)',
-            WebkitAppRegion: 'no-drag' // 解决 Electron 拖拽区域无法点击的 Bug
+            WebkitAppRegion: 'no-drag' as any // 解决 Electron 拖拽区域无法点击的 Bug
           }}
           onMouseDown={(e) => e.stopPropagation()} // 防止父级元素的 preventDefault 导致无法聚焦
           onClick={onCancel}
@@ -76,15 +76,15 @@ export default function PromptDialog({
             onMouseDown={(e) => e.stopPropagation()}
             style={{
               width: '320px',
-              background: 'rgba(15, 20, 35, 0.85)',
-              border: '1px solid rgba(147, 197, 253, 0.2)',
-              borderRadius: '12px',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.5), inset 0 0 0 1px rgba(255,255,255,0.05)',
-              padding: '1.5rem',
+              background: '#121620',
+              border: '1px solid rgba(255,255,255,0.05)',
+              borderRadius: '16px',
+              boxShadow: '0 30px 60px -15px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)',
+              padding: '1.8rem',
               display: 'flex',
               flexDirection: 'column',
-              gap: '1rem',
-              WebkitAppRegion: 'no-drag',
+              gap: '1.2rem',
+              WebkitAppRegion: 'no-drag' as any,
               pointerEvents: 'auto'
             }}
           >
@@ -112,7 +112,7 @@ export default function PromptDialog({
                 transition: 'border-color 0.2s',
                 userSelect: 'text',
                 WebkitUserSelect: 'text', // 解决 Electron 中无法选中和无光标的 Bug
-                WebkitAppRegion: 'no-drag',
+                WebkitAppRegion: 'no-drag' as any,
                 pointerEvents: 'auto'
               }}
               onFocus={(e) => e.target.style.borderColor = 'rgba(147, 197, 253, 0.5)'}
@@ -141,16 +141,16 @@ export default function PromptDialog({
                 onClick={() => onConfirm(value)}
                 style={{
                   padding: '0.4rem 1rem',
-                  background: 'rgba(147, 197, 253, 0.15)',
-                  border: '1px solid rgba(147, 197, 253, 0.3)',
+                  background: 'rgba(255, 255, 255, 0.05)',
+                  border: 'none',
                   borderRadius: '6px',
-                  color: 'rgba(147, 197, 253, 0.9)',
+                  color: 'rgba(255, 255, 255, 0.95)',
                   cursor: 'pointer',
                   fontSize: '0.75rem',
                   transition: 'all 0.2s'
                 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(147, 197, 253, 0.25)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(147, 197, 253, 0.15)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.1)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255, 255, 255, 0.05)' }}
               >
                 确认
               </button>

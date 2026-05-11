@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 * {
   margin: 0;
   padding: 0;
@@ -11,6 +15,19 @@
   --glass-border: rgba(147, 197, 253, 0.08);
   --glass-blur: blur(24px);
   --glow-blue: rgba(147, 197, 253, 0.4);
+
+  font-family: 'SF Pro Display', Inter, system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  font-weight: 300;
+
+  color-scheme: dark;
+  color: rgba(255, 255, 255, 0.85);
+  background-color: #020305; /* 极致深渊黑 */
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html,
@@ -19,29 +36,36 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: #030508; /* 非常深邃的星空蓝黑底色 */
-  color: #fff;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  background: #020305; /* 极致深渊黑 */
+  color: rgba(255, 255, 255, 0.85);
   user-select: none;
   cursor: default;
 }
 
-/* 美化全局滚动条 (隐形化) */
+/* 全局胶片噪点 (Cinematic Film Grain) */
+.film-grain {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.05;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+}
+
+/* 美化全局滚动条 (极致隐形) */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 2px;
+  height: 2px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(147, 197, 253, 0.1);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(147, 197, 253, 0.3);
+  background: rgba(255, 255, 255, 0.3);
 }
 
 /* 边缘暗角（Vignette）营造封闭感和沉浸感 */

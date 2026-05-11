@@ -13,10 +13,18 @@ export interface ImportedFile {
   size: number
   type: string
   importedAt: number
+  
+  title: string
+  authors: string[]
+  tags: string[]
+  abstract: string
+  userNotes: string
+  aiSummary: string
 }
 
 interface KnowledgeAPI {
   importFile: () => Promise<ImportedFile[] | null>
+  parsePdf: (localPath: string) => Promise<string>
 }
 
 interface AIAPI {

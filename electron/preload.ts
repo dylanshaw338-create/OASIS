@@ -10,7 +10,8 @@ const api = {
       ipcRenderer.invoke('data:write', filename, data)
   },
   knowledge: {
-    importFile: (): Promise<any[] | null> => ipcRenderer.invoke('knowledge:import')
+    importFile: (): Promise<any[] | null> => ipcRenderer.invoke('knowledge:import'),
+    parsePdf: (localPath: string) => ipcRenderer.invoke('knowledge:parse-pdf', localPath)
   },
   ai: {
     chat: (config: any, messages: any[]): Promise<any> => ipcRenderer.invoke('ai:chat', config, messages)

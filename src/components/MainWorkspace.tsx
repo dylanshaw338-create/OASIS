@@ -43,24 +43,25 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
 
   return (
     <div className="relative w-full h-screen overflow-hidden flex flex-col bg-[#030508]">
-      {/* 宏大的极缓星云漂移背景 */}
+      {/* 宏大且显性的星云漂移背景 */}
       <motion.div
-        className="absolute inset-0 pointer-events-none opacity-40"
+        className="absolute inset-0 pointer-events-none opacity-100"
         animate={{
-          backgroundPosition: ['0% 0%', '100% 100%', '0% 0%']
+          backgroundPosition: ['0% 0%', '100% 100%', '0% 100%', '100% 0%', '0% 0%']
         }}
-        transition={{ duration: 120, repeat: Infinity, ease: 'linear' }}
+        transition={{ duration: 40, repeat: Infinity, ease: 'linear' }}
         style={{
           background: `
-            radial-gradient(circle at 20% 30%, rgba(30, 58, 138, 0.15) 0%, transparent 50%),
-            radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.1) 0%, transparent 50%)
+            radial-gradient(circle at 20% 30%, rgba(125, 211, 252, 0.15) 0%, transparent 40%),
+            radial-gradient(circle at 80% 70%, rgba(88, 28, 135, 0.3) 0%, transparent 50%),
+            radial-gradient(circle at 50% 50%, rgba(30, 58, 138, 0.2) 0%, transparent 60%)
           `,
           backgroundSize: '200% 200%'
         }}
       />
 
       {/* 粒子背景（大幅增加粒子数量，增强透明度） */}
-      <ParticleCanvas opacity={0.7} particleCount={180} />
+      <ParticleCanvas opacity={0.7} />
 
       {/* 中央径向光晕 */}
       <div
@@ -82,23 +83,15 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
       {/* AI 悬浮面板 */}
       <GlobalAIOverlay isOpen={isAIOverlayOpen} onClose={() => setIsAIOverlayOpen(false)} />
 
-      {/* 顶栏：悬浮黑曜石质感 */}
+      {/* 顶栏：极简沉浸态 */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, delay: 0.2, ease: 'easeOut' }}
-        className="relative z-20 flex items-center justify-between px-8 mx-8 mt-6 rounded-2xl"
+        transition={{ duration: 1.2, delay: 0.2, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-20 flex items-center justify-between px-8 mx-8 mt-6"
         style={{
           height: '48px',
-          flexShrink: 0,
-          background: 'rgba(5, 8, 15, 0.4)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
-          borderRight: '1px solid rgba(0, 0, 0, 0.5)',
-          borderBottom: '1px solid rgba(0, 0, 0, 0.8)',
-          boxShadow: '0 20px 40px -10px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)'
+          flexShrink: 0
         }}
       >
         {/* 左：标题 */}
@@ -131,31 +124,21 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         <span
           style={{
             fontSize: '0.55rem',
-            letterSpacing: '0.25em',
+            letterSpacing: '0.3em',
             color: 'rgba(255,255,255,0.25)',
             fontWeight: 400
           }}
         >
-          v0.1 · PHASE 1
+          v0.3 · PHASE 2
         </span>
       </motion.div>
 
-      {/* 核心内容区包裹：深渊画框 */}
+      {/* 核心内容区包裹：去除边框，极致留白 */}
       <motion.div
         initial={{ opacity: 0, scale: 0.98 }}
         animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.8, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 flex-1 overflow-hidden mx-8 my-6 rounded-[24px]"
-        style={{
-          background: 'rgba(3, 5, 10, 0.6)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.03)',
-          borderLeft: '1px solid rgba(255, 255, 255, 0.02)',
-          borderRight: '1px solid rgba(0, 0, 0, 0.6)',
-          borderBottom: '1px solid rgba(0, 0, 0, 0.8)',
-          boxShadow: '0 30px 60px -15px rgba(0,0,0,0.8), inset 0 0 0 1px rgba(255,255,255,0.02)'
-        }}
+        transition={{ duration: 1.2, delay: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-10 flex-1 overflow-hidden mx-8 my-6"
       >
         {activeTab === 'thoughts' && <ThoughtsView />}
         {activeTab === 'graph' && <GraphView />}
@@ -163,24 +146,21 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         {activeTab === 'ai' && <AIView />}
       </motion.div>
 
-      {/* 底部导航：悬浮黑曜石与磁性交互 */}
+      {/* 底部导航：悬浮胶囊 Dock */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, delay: 0.3, ease: 'easeOut' }}
-        className="relative z-20 flex items-center justify-center gap-16 mx-auto mb-8 rounded-[24px]"
+        transition={{ duration: 1.2, delay: 0.3, ease: [0.16, 1, 0.3, 1] }}
+        className="relative z-20 flex items-center justify-center gap-12 mx-auto mb-10 rounded-full"
         style={{
-          height: '60px',
-          padding: '0 3.5rem',
+          height: '52px',
+          padding: '0 3rem',
           flexShrink: 0,
-          background: 'rgba(5, 8, 15, 0.45)',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          borderLeft: '1px solid rgba(255, 255, 255, 0.05)',
-          borderRight: '1px solid rgba(0, 0, 0, 0.5)',
-          borderBottom: '1px solid rgba(0, 0, 0, 0.8)',
-          boxShadow: '0 24px 48px -12px rgba(0,0,0,0.9), inset 0 1px 0 rgba(255,255,255,0.05)'
+          background: 'rgba(255, 255, 255, 0.015)',
+          backdropFilter: 'blur(32px)',
+          WebkitBackdropFilter: 'blur(32px)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.04)',
+          boxShadow: '0 20px 40px rgba(0,0,0,0.5)'
         }}
       >
         {TABS.map((tab) => {
