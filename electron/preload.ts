@@ -10,8 +10,15 @@ const api = {
       ipcRenderer.invoke('data:write', filename, data)
   },
   knowledge: {
-    importFile: (): Promise<any[] | null> => ipcRenderer.invoke('knowledge:import'),
-    parsePdf: (localPath: string) => ipcRenderer.invoke('knowledge:parse-pdf', localPath)
+    importFile: () => ipcRenderer.invoke('knowledge:import'),
+    parsePdf: (localPath: string) => ipcRenderer.invoke('knowledge:parse-pdf', localPath),
+    connectWebVPN: () => ipcRenderer.invoke('knowledge:connect-webvpn'),
+    openWoS: () => ipcRenderer.invoke('knowledge:open-wos'),
+    onDownloadComplete: (callback: (paper: any) => void) => {
+      // 避免重复绑定
+      ipcRenderer.removeAllListeners('knowledge:download-complete')
+      ipcRenderer.on('knowledge:download-complete', (_event, paper) => callback(paper))
+    }
   },
   ai: {
     chat: (config: any, messages: any[]): Promise<any> => ipcRenderer.invoke('ai:chat', config, messages)

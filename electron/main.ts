@@ -1,11 +1,11 @@
-import { app, shell, BrowserWindow, ipcMain, dialog, protocol, net } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, protocol, net, session } from 'electron'
 import { join, basename, extname } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, statSync } from 'fs'
 import crypto from 'crypto'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
-// 修复：由于 pdf-parse 是 CommonJS 模块，在 ESBuild/Vite 环境中直接 import 可能会导致 default 导出丢失
-const pdfParse = require('pdf-parse')
+// 修复：由于 pdf-parse 2.4.x 的 API 变更，我们需要引入 PDFParse 类
+const { PDFParse } = require('pdf-parse')
 
 // 在 app.whenReady() 之前注册自定义协议特权
 protocol.registerSchemesAsPrivileged([
@@ -62,6 +62,84 @@ app.whenReady().then(() => {
 
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
+  })
+
+  // 核心特性：针对 WebVPN 独立会话配置“下载拦截与自动入库”
+  const vpnSession = session.fromPartition('persist:ruc-webvpn')
+  vpnSession.on('will-download', async (event, item, webContents) => {
+    const isPdf = item.getMimeType() === 'application/pdf' || item.getFilename().toLowerCase().endsWith('.pdf')
+    
+    if (isPdf) {
+      console.log('Intercepted PDF download from WebVPN:', item.getFilename())
+      
+      const kbDir = join(app.getPath('userData'), 'knowledge_base')
+      if (!existsSync(kbDir)) mkdirSync(kbDir, { recursive: true })
+
+      const originalFilename = item.getFilename()
+      let finalName = originalFilename
+      let destPath = join(kbDir, finalName)
+
+      if (existsSync(destPath)) {
+        const ext = extname(finalName)
+        const base = basename(finalName, ext)
+        finalName = `${base}_${Date.now()}${ext}`
+        destPath = join(kbDir, finalName)
+      }
+
+      // 覆盖系统默认下载行为，静默保存到我们的知识库目录
+      item.setSavePath(destPath)
+
+      item.once('done', async (event, state) => {
+        if (state === 'completed') {
+          console.log('Download completed:', destPath)
+          const stats = statSync(destPath)
+          let extractedTitle = basename(finalName, extname(finalName))
+          let extractedAuthors: string[] = []
+
+          // 自动提取元数据
+          try {
+            const dataBuffer = readFileSync(destPath)
+            const { PDFParse } = require('pdf-parse')
+            const parser = new PDFParse({ data: dataBuffer })
+            const parsed = await parser.getInfo()
+            if (parsed.info) {
+              if (parsed.info.Title && parsed.info.Title.trim() !== '') {
+                extractedTitle = parsed.info.Title.trim()
+              }
+              if (parsed.info.Author && parsed.info.Author.trim() !== '') {
+                extractedAuthors = parsed.info.Author.split(/[,;]/).map((a: string) => a.trim()).filter((a: string) => a)
+              }
+            }
+            await parser.destroy()
+          } catch (e) {
+            console.error('Failed to extract metadata from downloaded PDF', e)
+          }
+
+          const newPaper = {
+            id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+            name: finalName,
+            originalPath: item.getURL(),
+            localPath: destPath,
+            size: stats.size,
+            type: 'pdf',
+            importedAt: Date.now(),
+            title: extractedTitle,
+            authors: extractedAuthors,
+            tags: ['WebVPN', 'Auto-Downloaded'],
+            abstract: '',
+            userNotes: '',
+            aiSummary: ''
+          }
+
+          // 将新论文广播给所有渲染进程窗口
+          BrowserWindow.getAllWindows().forEach(win => {
+            win.webContents.send('knowledge:download-complete', newPaper)
+          })
+        } else {
+          console.log(`Download failed: ${state}`)
+        }
+      })
+    }
   })
 
   // IPC：退出应用
@@ -134,7 +212,8 @@ app.whenReady().then(() => {
         if (extname(finalName).toLowerCase() === '.pdf') {
           try {
             const dataBuffer = readFileSync(finalDestPath)
-            const parsed = await pdfParse(dataBuffer)
+            const parser = new PDFParse({ data: dataBuffer })
+            const parsed = await parser.getInfo()
             // 尝试从 PDF metadata 中提取
             if (parsed.info) {
               if (parsed.info.Title && parsed.info.Title.trim() !== '') {
@@ -145,6 +224,7 @@ app.whenReady().then(() => {
                 extractedAuthors = parsed.info.Author.split(/[,;]/).map((a: string) => a.trim()).filter((a: string) => a)
               }
             }
+            await parser.destroy()
           } catch (e) {
             console.error('Failed to extract metadata from PDF', e)
           }
@@ -179,12 +259,113 @@ app.whenReady().then(() => {
     try {
       if (!existsSync(localPath)) throw new Error('File not found')
       const dataBuffer = readFileSync(localPath)
-      const data = await pdfParse(dataBuffer)
-      return data.text || ''
+      const parser = new PDFParse({ data: dataBuffer })
+      const textData = await parser.getText()
+      await parser.destroy()
+      return textData.text || ''
     } catch (err: any) {
       console.error('[knowledge:parse-pdf]', err)
       throw new Error(`PDF 解析失败: ${err.message}`)
     }
+  })
+
+  // IPC：连接人大 WebVPN (第一阶段探路)
+  ipcMain.handle('knowledge:connect-webvpn', async () => {
+    return new Promise((resolve) => {
+      // 找到主窗口作为父窗口
+      const parentWindow = BrowserWindow.getAllWindows()[0]
+      
+      const vpnWindow = new BrowserWindow({
+        parent: parentWindow,
+        modal: true, // 模态窗口
+        width: 1000,
+        height: 700,
+        title: 'RUC WebVPN 登录授权',
+        autoHideMenuBar: true,
+        backgroundColor: '#f3f4f6',
+        webPreferences: {
+          partition: 'persist:ruc-webvpn', // 关键：使用持久化的独立分区来保存 Cookie
+          nodeIntegration: false,
+          contextIsolation: true
+        }
+      })
+
+      vpnWindow.loadURL('https://webvpn.ruc.edu.cn')
+
+      // 当用户关闭窗口时，我们检查该分区下是否成功获取到了 WebVPN 的 Cookie
+      vpnWindow.on('closed', async () => {
+        try {
+          const ses = session.fromPartition('persist:ruc-webvpn')
+          const cookies = await ses.cookies.get({ domain: 'webvpn.ruc.edu.cn' })
+          
+          // 如果存在 cookie，说明可能已经登录过（后续我们可以根据特定的 session cookie 名称做更精确的校验）
+          const hasCookie = cookies.length > 0
+          resolve(hasCookie)
+        } catch (e) {
+          console.error('Failed to get WebVPN cookies:', e)
+          resolve(false)
+        }
+      })
+    })
+  })
+
+  // IPC：打开 Web of Science 进行检索 (第二阶段)
+  ipcMain.handle('knowledge:open-wos', async () => {
+    return new Promise((resolve) => {
+      const parentWindow = BrowserWindow.getAllWindows()[0]
+      const wosWindow = new BrowserWindow({
+        parent: parentWindow,
+        width: 1400,
+        height: 900,
+        title: 'Web of Science (via RUC WebVPN)',
+        autoHideMenuBar: true,
+        backgroundColor: '#f3f4f6',
+        webPreferences: {
+          partition: 'persist:ruc-webvpn', // 共享相同的 WebVPN 会话
+          nodeIntegration: false,
+          contextIsolation: true,
+          webSecurity: false // 关键：关闭 Web 安全校验，防止复杂的 WebVPN 重定向触发 CORS 拦截导致 JSON 解析失败
+        }
+      })
+
+      // 定义一个递归创建防逃逸窗口的辅助函数
+      const createSecureVpnWindow = (targetUrl: string) => {
+        const popup = new BrowserWindow({
+          parent: parentWindow,
+          width: 1200,
+          height: 800,
+          title: 'Academic Resource (via WebVPN)',
+          autoHideMenuBar: true,
+          backgroundColor: '#f3f4f6',
+          webPreferences: {
+            partition: 'persist:ruc-webvpn', // 强制继承 VPN Session
+            nodeIntegration: false,
+            contextIsolation: true,
+            webSecurity: false // 关键：关闭 Web 安全校验，防止复杂的 WebVPN 重定向触发 CORS 拦截导致 JSON 解析失败
+          }
+        })
+        
+        // 递归拦截更深层的弹窗，坚决不让链接逃逸到系统外部浏览器
+        popup.webContents.setWindowOpenHandler((innerDetails) => {
+          createSecureVpnWindow(innerDetails.url)
+          return { action: 'deny' }
+        })
+
+        popup.loadURL(targetUrl)
+      }
+
+      // 彻底拦截弹窗，改为手动创建新窗口加载目标 URL，解决跨域重定向白屏问题
+      wosWindow.webContents.setWindowOpenHandler((details) => {
+        createSecureVpnWindow(details.url)
+        return { action: 'deny' } // 阻止系统默认弹窗
+      })
+
+      // 由于我们无法直接得知 Web of Science 在人大 WebVPN 内部重写后的精确 URL，
+      // 我们仍然导航至门户，并在标题上给予用户清晰的指引，让用户点击对应的资源。
+      wosWindow.loadURL('https://webvpn.ruc.edu.cn')
+
+      wosWindow.on('closed', () => resolve(true))
+    })
   })
 
   // IPC：AI 聊天通信 (MiniMax 代理)

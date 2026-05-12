@@ -25,6 +25,9 @@ export interface ImportedFile {
 interface KnowledgeAPI {
   importFile: () => Promise<ImportedFile[] | null>
   parsePdf: (localPath: string) => Promise<string>
+  connectWebVPN: () => Promise<boolean>
+  openWoS: () => Promise<boolean>
+  onDownloadComplete: (callback: (paper: any) => void) => void
 }
 
 interface AIAPI {

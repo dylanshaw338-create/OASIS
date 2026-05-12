@@ -21,9 +21,13 @@ export default function PapersView() {
   const [aiMessages, setAiMessages] = useState<{role: string, content: string}[]>([])
   const aiMessagesEndRef = useRef<HTMLDivElement>(null)
 
+  // VPN 状态
+  const [vpnConnected, setVpnConnected] = useState(false)
+  const [isConnectingVpn, setIsConnectingVpn] = useState(false)
+
   const selectedPaper = papers.find(p => p.id === selectedId)
 
-  // 1. 初始加载
+  // 1. 初始加载与事件监听
   useEffect(() => {
     const loadKnowledgeBase = async () => {
       try {
@@ -42,6 +46,17 @@ export default function PapersView() {
       }
     }
     loadKnowledgeBase()
+
+    // 监听 WebVPN 自动下载完成事件
+    window.electronAPI.knowledge.onDownloadComplete(async (newPaper: Paper) => {
+      console.log('Received new paper from agent:', newPaper)
+      setPapers(prev => {
+        const updated = [newPaper, ...prev]
+        window.electronAPI.data.write('knowledge_base.json', updated)
+        return updated
+      })
+      setSelectedId(newPaper.id)
+    })
   }, [])
 
   // 监听选中切换
@@ -177,6 +192,23 @@ export default function PapersView() {
     }
   }
 
+  // 6. 连接 WebVPN
+  const handleConnectWebVPN = async () => {
+    setIsConnectingVpn(true)
+    try {
+      const success = await window.electronAPI.knowledge.connectWebVPN()
+      setVpnConnected(success)
+      if (success) {
+        // 可以加入一个通知提示
+        console.log('WebVPN 连接成功并已捕获凭证')
+      }
+    } catch (err) {
+      console.error('Failed to connect WebVPN', err)
+    } finally {
+      setIsConnectingVpn(false)
+    }
+  }
+
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return bytes + ' B'
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
@@ -214,6 +246,58 @@ export default function PapersView() {
           >
             + ADD
           </button>
+        </div>
+
+        {/* WebVPN 探路区域 */}
+        <div className="px-6 py-4 flex flex-col gap-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+          <button
+            onClick={handleConnectWebVPN}
+            disabled={isConnectingVpn}
+            className="w-full flex items-center justify-center gap-2 relative overflow-hidden group"
+            style={{
+              background: vpnConnected ? 'rgba(16, 185, 129, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+              border: `1px solid ${vpnConnected ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 255, 255, 0.08)'}`,
+              padding: '0.6rem',
+              fontSize: '0.65rem',
+              color: vpnConnected ? '#10b981' : 'rgba(255, 255, 255, 0.6)',
+              cursor: isConnectingVpn ? 'wait' : 'pointer',
+              borderRadius: '6px',
+              transition: 'all 0.3s ease',
+              letterSpacing: '0.05em'
+            }}
+          >
+            <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            </svg>
+            {isConnectingVpn ? 'CONNECTING...' : vpnConnected ? 'VPN CONNECTED' : 'RUC WEBVPN'}
+          </button>
+
+          {vpnConnected && (
+            <button
+              onClick={() => window.electronAPI.knowledge.openWoS()}
+              className="w-full flex items-center justify-center gap-2 relative overflow-hidden group"
+              style={{
+                background: 'rgba(59, 130, 246, 0.15)',
+                border: '1px solid rgba(59, 130, 246, 0.3)',
+                padding: '0.6rem',
+                fontSize: '0.65rem',
+                color: '#60a5fa',
+                cursor: 'pointer',
+                borderRadius: '6px',
+                transition: 'all 0.3s ease',
+                letterSpacing: '0.05em'
+              }}
+            >
+              <div className="absolute inset-0 bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              SEARCH WEB OF SCIENCE
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none' }}>
