@@ -23,13 +23,13 @@ export class AiService {
 
 
           
-          description: 'Search for academic papers and literature metadata. MUST translate user\'s intent into highly professional ENGLISH academic keywords, regardless of the user\'s input language.',
+          description: 'Search for academic papers. Extract ONLY the core academic entities/concepts from the user\'s request. Translate them into highly professional ENGLISH keywords. Do NOT include conversational words, verbs, or database names (e.g., remove "find", "papers", "authoritative", "ACM", "Web of Science").',
           parameters: {
             type: 'object',
             properties: {
               query: {
                 type: 'string',
-                description: 'Professional ENGLISH search keywords or Boolean query (e.g. "large language models virtual reality", "spatial computing HCI"). NEVER use Chinese or other languages here.'
+                description: 'PURE academic keywords or exact phrases in English. Use double quotes for exact phrases (e.g. "\\"Human-Computer Interaction\\" \\"Virtual Reality\\""). NEVER include words like "papers", "authoritative", or database names.'
               }
             },
             required: ['query']
@@ -83,6 +83,13 @@ export class AiService {
 
             // 第二次请求：大模型拿到论文数据后，进行自然语言总结
             console.log('[AI] Submitting tool result back to model...');
+            
+            // 注入后置的白名单过滤逻辑（避免污染首次搜索的 Prompt）
+            newMessages.push({
+              role: 'system',
+              content: `【学术文献推荐约束】：\n你已经获取到了最新的论文数据。在向用户推荐时，请检查数据的 publisher 字段。如果它不在以下白名单内，必须在回复中明确标注：“⚠️ 注意：这篇论文属于 [XX 数据库]，目前未在机构采购清单中，可能无法通过直达通道获取全文。”\n\n白名单：[Web of Science, ACM, IEEE, Springer, Elsevier, Wiley, Oxford, Cambridge, Nature, Science]`
+            });
+
             const finalResponse = await this.callMinimax(apiKey, model, newMessages, tools);
             
             // 我们改造返回值：除了大模型的最终回复，我们把结构化的 papers 数据也强行塞进去

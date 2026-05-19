@@ -235,14 +235,9 @@ export default function PapersView() {
 
       const dynamicWhitelist = config.dbWhitelist ? config.dbWhitelist.split('\n').map((s:string) => s.trim()).filter(Boolean) : PURCHASED_DATABASES;
 
-      const systemPrompt = `你是一个名为 OASIS AI 的深度学术检索助手。面对任何需要寻找论文的问题，请立刻主动调用 search_academic_papers 工具。如果搜索不到有效信息，请用自然、优雅的语气坦诚地说明情况即可，绝不能胡编乱造。
-
-【学术文献推荐约束】：
-如果你调用了学术检索工具找到了论文数据，请严格遵守以下规则：
-1. 机构已采购的数据库白名单：[${dynamicWhitelist.join(', ')}]
-2. 请检查返回数据中的 publisher (出版商) 字段，如果它不在上述白名单中，说明机构未购买该库权限。
-3. 尽可能优先推荐属于白名单内的论文。
-4. 如果你必须推荐一篇不在白名单内的论文，**必须在回复中明确标注并提醒用户**：“⚠️ 注意：这篇论文属于 [XX 数据库]，该数据库目前未在机构采购清单中，可能无法通过直达通道获取全文。”`;
+      // 注意：这里移除了硬编码的白名单约束，避免在工具调用（搜索）阶段发生提示词泄露（Prompt Leakage）
+      // 白名单过滤逻辑已经后置到 electron/services/aiService.ts 中的第二次大模型调用中
+      const systemPrompt = `你是一个名为 OASIS AI 的深度学术检索助手。面对任何需要寻找论文的问题，请立刻主动调用 search_academic_papers 工具。如果搜索不到有效信息，请用自然、优雅的语气坦诚地说明情况即可，绝不能胡编乱造。`;
 
       const payload = [
         { role: 'system', name: 'system', content: systemPrompt },

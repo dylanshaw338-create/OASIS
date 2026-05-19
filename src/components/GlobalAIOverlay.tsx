@@ -306,16 +306,10 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       const config = { provider: 'minimax', apiKey, model }
       
       // 2. 获取本地思想笔记，注入到 System Prompt
-      const currentWhitelistArray = dbWhitelist.split('\n').map(s => s.trim()).filter(Boolean);
       
-      let systemPrompt = `你是一个名为 OASIS AI 的深度思想伙伴，致力于帮助用户探索未来人机交互的范式。你已完全接入全球互联网，并具备实时的网络搜索能力。面对任何需要实时信息的问题，请立刻主动调用搜索工具。如果搜索不到有效信息，或者用户只是在询问你的能力，请用你自然、优雅的语气坦诚地说明情况即可，绝不能胡编乱造。你需要基于用户记录的思想，提供深刻、有启发性的见解。
-
-【学术文献推荐约束】：
-如果你调用了学术检索工具找到了论文数据，请严格遵守以下规则：
-1. 机构已采购的数据库白名单：[${currentWhitelistArray.join(', ')}]
-2. 请检查返回数据中的 publisher (出版商) 字段，如果它不在上述白名单中，说明机构未购买该库权限。
-3. 尽可能优先推荐属于白名单内的论文。
-4. 如果你必须推荐一篇不在白名单内的论文，**必须在回复中明确标注并提醒用户**：“⚠️ 注意：这篇论文属于 [XX 数据库]，该数据库目前未在机构采购清单中，可能无法通过直达通道获取全文。”`
+      // 注意：这里移除了硬编码的白名单约束，避免在工具调用（搜索）阶段发生提示词泄露（Prompt Leakage）
+      // 白名单过滤逻辑已经后置到 electron/services/aiService.ts 中的第二次大模型调用中
+      let systemPrompt = `你是一个名为 OASIS AI 的深度思想伙伴，致力于帮助用户探索未来人机交互的范式。你已完全接入全球互联网，并具备实时的网络搜索能力。面对任何需要寻找学术论文或实时信息的问题，请立刻主动调用工具。如果搜索不到有效信息，或者用户只是在询问你的能力，请用你自然、优雅的语气坦诚地说明情况即可，绝不能胡编乱造。你需要基于用户记录的思想，提供深刻、有启发性的见解。`
       
       if (injectLocalThoughts) {
         try {
