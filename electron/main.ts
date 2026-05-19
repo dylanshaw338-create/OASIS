@@ -27,7 +27,7 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      webSecurity: true /* 修复 Cloudflare 验证无限循环 */ // 允许 iframe 读取本地 file:// 协议文件
+      webSecurity: false // 允许 iframe 读取本地 file:// 协议文件
     }
   })
 
