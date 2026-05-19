@@ -77,8 +77,8 @@ export default function MainWorkspace({ onEscapeRequest }: MainWorkspaceProps) {
         background: 'radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.4) 85%, rgba(0,0,0,0.8) 100%)'
       }} />
 
-      {/* AI 召唤主星 (固定在右侧) */}
-      <AISummonStar onClick={() => setIsAIOverlayOpen(true)} />
+      {/* AI 召唤主星 (固定在右侧) - 在论文界面隐藏 */}
+      {activeTab !== 'papers' && <AISummonStar onClick={() => setIsAIOverlayOpen(true)} />}
 
       {/* AI 悬浮面板 */}
       <GlobalAIOverlay isOpen={isAIOverlayOpen} onClose={() => setIsAIOverlayOpen(false)} />

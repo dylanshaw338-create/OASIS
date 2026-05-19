@@ -12,12 +12,26 @@ const api = {
   knowledge: {
     importFile: () => ipcRenderer.invoke('knowledge:import'),
     parsePdf: (localPath: string) => ipcRenderer.invoke('knowledge:parse-pdf', localPath),
+    showInFolder: (localPath: string) => ipcRenderer.invoke('knowledge:show-in-folder', localPath),
+    deletePaper: (localPath: string) => ipcRenderer.invoke('knowledge:delete-paper', localPath),
     connectWebVPN: () => ipcRenderer.invoke('knowledge:connect-webvpn'),
     openWoS: () => ipcRenderer.invoke('knowledge:open-wos'),
     onDownloadComplete: (callback: (paper: any) => void) => {
       // 避免重复绑定
       ipcRenderer.removeAllListeners('knowledge:download-complete')
       ipcRenderer.on('knowledge:download-complete', (_event, paper) => callback(paper))
+    },
+    testDoiDownload: (doi: string) => ipcRenderer.invoke('knowledge:test-doi-download', doi),
+    searchPapers: (query: string) => ipcRenderer.invoke('knowledge:search-papers', query)
+  },
+  vpn: {
+    saveCredentials: (account, password) => ipcRenderer.invoke('vpn:save-credentials', account, password),
+    getCredentials: () => ipcRenderer.invoke('vpn:get-credentials'),
+    clearCredentials: () => ipcRenderer.invoke('vpn:clear-credentials'),
+    submitSms: (code) => ipcRenderer.invoke('vpn:submit-sms', code),
+    onRequireSms: (callback) => {
+      ipcRenderer.removeAllListeners('vpn:require-sms')
+      ipcRenderer.on('vpn:require-sms', (_event, tailNumber) => callback(tailNumber))
     }
   },
   ai: {

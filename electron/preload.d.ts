@@ -25,9 +25,21 @@ export interface ImportedFile {
 interface KnowledgeAPI {
   importFile: () => Promise<ImportedFile[] | null>
   parsePdf: (localPath: string) => Promise<string>
+  showInFolder: (localPath: string) => Promise<boolean>
+  deletePaper: (localPath: string) => Promise<boolean>
   connectWebVPN: () => Promise<boolean>
   openWoS: () => Promise<boolean>
   onDownloadComplete: (callback: (paper: any) => void) => void
+  testDoiDownload: (doi: string) => Promise<boolean>
+  searchPapers: (query: string) => Promise<any[]>
+}
+
+interface VpnAPI {
+  saveCredentials: (account: string, password: string) => Promise<boolean>
+  getCredentials: () => Promise<{ account: string } | null>
+  clearCredentials: () => Promise<boolean>
+  submitSms: (code: string) => Promise<boolean>
+  onRequireSms: (callback: (tailNumber: string | null) => void) => void
 }
 
 interface AIAPI {
@@ -38,6 +50,7 @@ interface FutureHCIAPI {
   quit: () => void
   data: DataAPI
   knowledge: KnowledgeAPI
+  vpn: VpnAPI
   ai: AIAPI
 }
 

@@ -13,7 +13,9 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
     "framer-motion": "^11.18.2",
+    "lucide-react": "^1.16.0",
     "pdf-parse": "^2.4.5",
+    "react-force-graph-2d": "^1.29.1",
     "react-markdown": "^10.1.0",
     "tailwindcss": "^4.2.4"
   },

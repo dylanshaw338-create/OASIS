@@ -51,3 +51,13 @@ export interface PapersStore {
   schemaVersion: number
   papers: Paper[]
 }
+
+export interface Message {
+  id: string
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  content: string
+  name?: string
+  tool_calls?: any[]
+  tool_call_id?: string
+  _papers?: any[] // 新增：用于前端渲染论文卡片的隐藏数据
+}

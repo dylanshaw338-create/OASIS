@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
+import { PURCHASED_DATABASES } from '../config/databaseWhitelist'
 
 interface Message {
   id?: string
@@ -31,6 +32,13 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
   const [apiKey, setApiKey] = useState('')
   const [model, setModel] = useState('abab6.5s-chat')
   const [injectLocalThoughts, setInjectLocalThoughts] = useState(true)
+  const [dbWhitelist, setDbWhitelist] = useState(PURCHASED_DATABASES.join('\n'))
+
+  // VPN 授权状态
+  const [vpnAccount, setVpnAccount] = useState('')
+  const [vpnPassword, setVpnPassword] = useState('')
+  const [savedVpnAccount, setSavedVpnAccount] = useState('')
+  const [vpnSaveStatus, setVpnSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
@@ -198,6 +206,9 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
         setApiKey((config as any).apiKey)
         setModel((config as any).model || 'abab6.5s-chat')
         setInjectLocalThoughts((config as any).injectLocalThoughts !== false)
+        if ((config as any).dbWhitelist !== undefined) {
+          setDbWhitelist((config as any).dbWhitelist)
+        }
         setIsConfiguring(false)
       } else {
         setModel('abab6.5s-chat') // 确保有一个默认有效的字符串
@@ -209,11 +220,57 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       setInjectLocalThoughts(true)
       setIsConfiguring(true)
     }
+
+    try {
+      const vpnCreds = await window.electronAPI.vpn.getCredentials()
+      if (vpnCreds && vpnCreds.account) {
+        setSavedVpnAccount(vpnCreds.account)
+        setVpnAccount(vpnCreds.account)
+      }
+    } catch (e) {
+      console.error('Failed to get VPN credentials status', e)
+    }
+  }
+
+  const handleSaveVpn = async () => {
+    if (!vpnAccount.trim() || !vpnPassword.trim()) return
+    setVpnSaveStatus('saving')
+    try {
+      const success = await window.electronAPI.vpn.saveCredentials(vpnAccount, vpnPassword)
+      if (success) {
+        setSavedVpnAccount(vpnAccount)
+        setVpnSaveStatus('success')
+        setTimeout(() => setVpnSaveStatus('idle'), 3000)
+      } else {
+        setVpnSaveStatus('error')
+        setTimeout(() => setVpnSaveStatus('idle'), 3000)
+      }
+    } catch (e) {
+      setVpnSaveStatus('error')
+      setTimeout(() => setVpnSaveStatus('idle'), 3000)
+    }
+  }
+
+  const handleClearVpn = async () => {
+    try {
+      await window.electronAPI.vpn.clearCredentials()
+      setSavedVpnAccount('')
+      setVpnAccount('')
+      setVpnPassword('')
+    } catch (e) {
+      console.error('Failed to clear VPN credentials', e)
+    }
   }
 
   const saveConfig = async () => {
     if (!apiKey.trim()) return
-    await window.electronAPI.data.write('ai_config.json', { provider: 'minimax', apiKey, model, injectLocalThoughts })
+    await window.electronAPI.data.write('ai_config.json', { 
+      provider: 'minimax', 
+      apiKey, 
+      model, 
+      injectLocalThoughts,
+      dbWhitelist
+    })
     setIsConfiguring(false)
   }
 
@@ -249,7 +306,16 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       const config = { provider: 'minimax', apiKey, model }
       
       // 2. 获取本地思想笔记，注入到 System Prompt
-      let systemPrompt = "你是一个名为 OASIS AI 的深度思想伙伴，致力于帮助用户探索未来人机交互的范式。你已完全接入全球互联网，并具备实时的网络搜索能力。面对任何需要实时信息的问题，请立刻主动调用搜索工具。如果搜索不到有效信息，或者用户只是在询问你的能力，请用你自然、优雅的语气坦诚地说明情况即可，绝不能胡编乱造。你需要基于用户记录的思想，提供深刻、有启发性的见解。"
+      const currentWhitelistArray = dbWhitelist.split('\n').map(s => s.trim()).filter(Boolean);
+      
+      let systemPrompt = `你是一个名为 OASIS AI 的深度思想伙伴，致力于帮助用户探索未来人机交互的范式。你已完全接入全球互联网，并具备实时的网络搜索能力。面对任何需要实时信息的问题，请立刻主动调用搜索工具。如果搜索不到有效信息，或者用户只是在询问你的能力，请用你自然、优雅的语气坦诚地说明情况即可，绝不能胡编乱造。你需要基于用户记录的思想，提供深刻、有启发性的见解。
+
+【学术文献推荐约束】：
+如果你调用了学术检索工具找到了论文数据，请严格遵守以下规则：
+1. 机构已采购的数据库白名单：[${currentWhitelistArray.join(', ')}]
+2. 请检查返回数据中的 publisher (出版商) 字段，如果它不在上述白名单中，说明机构未购买该库权限。
+3. 尽可能优先推荐属于白名单内的论文。
+4. 如果你必须推荐一篇不在白名单内的论文，**必须在回复中明确标注并提醒用户**：“⚠️ 注意：这篇论文属于 [XX 数据库]，该数据库目前未在机构采购清单中，可能无法通过直达通道获取全文。”`
       
       if (injectLocalThoughts) {
         try {
@@ -270,20 +336,36 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
       }
 
       // 将 System Prompt 塞在最前面 (注意：发送给 API 时不需要 id 字段)
+      // 如果消息本身已经包含 tool_calls 或 tool_call_id，说明它是工具调用的上下文，直接保留原始结构
       const payloadMessages = [
         { role: 'system', name: 'system', content: systemPrompt },
-        ...newMessages.map(m => ({ role: m.role, content: m.content }))
+        ...newMessages.map(m => {
+          const base: any = { role: m.role, content: m.content || '' }
+          if (m.name) base.name = m.name
+          if (m.tool_calls) base.tool_calls = m.tool_calls
+          if (m.tool_call_id) base.tool_call_id = m.tool_call_id
+          return base
+        })
       ]
 
       const response = await window.electronAPI.ai.chat(config, payloadMessages)
       
-      const appendAiMessage = async (msgContent: string, isError = false) => {
+      const appendAiMessage = async (msgContent: string, papers?: any[], isError = false) => {
         setSessions(prev => {
           const latestSessions = prev.map(s => {
             if (s.id === currentSessionId) {
+              const newMsg: Message = { 
+                id: makeId(), 
+                role: 'assistant', 
+                content: msgContent 
+              }
+              // 如果这轮对话后端返回了我们注入的论文数据，存进前端的 Message 里
+              if (papers && papers.length > 0) {
+                newMsg._papers = papers
+              }
               return {
                 ...s,
-                messages: [...s.messages, { id: makeId(), role: 'assistant', content: msgContent } as Message],
+                messages: [...s.messages, newMsg],
                 updatedAt: new Date().toISOString()
               }
             }
@@ -299,12 +381,13 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
         const aiMessage = choice.message || (choice.messages && choice.messages.length > 0 ? choice.messages[choice.messages.length - 1] : null)
         
         if (aiMessage) {
-          await appendAiMessage(aiMessage.content || '')
+          // 这里读取主进程通过 _injectedPapers 传递过来的论文数据
+          await appendAiMessage(aiMessage.content || '', response._injectedPapers)
         } else {
           throw new Error('API 响应中缺少 message 字段')
         }
       } else {
-        await appendAiMessage('抱歉，接口返回异常或无内容。', true)
+        await appendAiMessage('抱歉，接口返回异常或无内容。', [], true)
       }
     } catch (err: any) {
       console.error(err)
@@ -437,6 +520,115 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
                       开启后，AI 将读取您最近的思想笔记以提供个性化回答。关闭后可节省 Token 并避免干扰。
                     </p>
                   </div>
+
+                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', margin: '1rem 0' }}></div>
+
+                  <div className="mb-2">
+                    <h3 style={{ fontSize: '0.85rem', letterSpacing: '0.15em', fontWeight: 300, color: 'rgba(255,255,255,0.9)' }}>
+                      DATABASE WHITELIST
+                    </h3>
+                    <p style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.05em', marginTop: '0.5rem' }}>
+                      配置机构已采购的核心学术数据库，每行一个。AI 会在推荐论文时依据此名单进行权限过滤与提示。
+                    </p>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <textarea
+                      value={dbWhitelist}
+                      onChange={(e) => setDbWhitelist(e.target.value)}
+                      placeholder="ACM&#10;IEEE&#10;Springer..."
+                      style={{ 
+                        background: 'rgba(0,0,0,0.3)', 
+                        border: '1px solid rgba(147, 197, 253, 0.2)', 
+                        borderRadius: '6px', 
+                        padding: '0.8rem', 
+                        color: 'white', 
+                        fontSize: '0.8rem', 
+                        outline: 'none', 
+                        transition: 'border-color 0.3s',
+                        minHeight: '120px',
+                        resize: 'vertical',
+                        lineHeight: '1.6'
+                      }}
+                      onFocus={(e) => e.target.style.borderColor = 'rgba(147, 197, 253, 0.6)'}
+                      onBlur={(e) => e.target.style.borderColor = 'rgba(147, 197, 253, 0.2)'}
+                    />
+                  </div>
+
+                  <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)', margin: '1rem 0' }}></div>
+
+                  <div className="mb-2">
+                    <h3 style={{ fontSize: '0.85rem', letterSpacing: '0.15em', fontWeight: 300, color: 'rgba(255,255,255,0.9)' }}>
+                      ACADEMIC NETWORK (WEBVPN)
+                    </h3>
+                    <p style={{ fontSize: '0.55rem', color: 'rgba(255,255,255,0.4)', letterSpacing: '0.05em', marginTop: '0.5rem' }}>
+                      授权后可使用系统级静默下载 Agent。凭证将在本地通过系统级硬件密钥安全加密存储。
+                    </p>
+                  </div>
+
+                  {savedVpnAccount ? (
+                    <div className="flex items-center justify-between p-4" style={{ background: 'rgba(16, 185, 129, 0.1)', border: '1px solid rgba(16, 185, 129, 0.2)', borderRadius: '6px' }}>
+                      <div className="flex flex-col">
+                        <span style={{ fontSize: '0.65rem', color: '#10b981', letterSpacing: '0.1em' }}>AUTHORIZED ACCOUNT</span>
+                        <span style={{ fontSize: '0.9rem', color: 'white', marginTop: '0.2rem' }}>{savedVpnAccount}</span>
+                      </div>
+                      <button
+                        onClick={handleClearVpn}
+                        style={{ background: 'transparent', border: '1px solid rgba(239, 68, 68, 0.3)', color: 'rgba(239, 68, 68, 0.9)', padding: '0.4rem 0.8rem', borderRadius: '4px', fontSize: '0.65rem', cursor: 'pointer', transition: 'all 0.3s' }}
+                        onMouseOver={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                        onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
+                        CLEAR
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      <div className="flex gap-4">
+                        <div className="flex flex-col gap-2 flex-1">
+                          <label style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(147, 197, 253, 0.7)' }}>STUDENT ID</label>
+                          <input
+                            type="text"
+                            value={vpnAccount}
+                            onChange={(e) => setVpnAccount(e.target.value)}
+                            placeholder="微人大账号"
+                            style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(147, 197, 253, 0.2)', borderRadius: '6px', padding: '0.6rem 0.8rem', color: 'white', fontSize: '0.8rem', outline: 'none', transition: 'border-color 0.3s' }}
+                            onFocus={(e) => e.target.style.borderColor = 'rgba(147, 197, 253, 0.6)'}
+                            onBlur={(e) => e.target.style.borderColor = 'rgba(147, 197, 253, 0.2)'}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-2 flex-1">
+                          <label style={{ fontSize: '0.55rem', letterSpacing: '0.2em', color: 'rgba(147, 197, 253, 0.7)' }}>PASSWORD</label>
+                          <input
+                            type="password"
+                            value={vpnPassword}
+                            onChange={(e) => setVpnPassword(e.target.value)}
+                            placeholder="微人大密码"
+                            style={{ background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(147, 197, 253, 0.2)', borderRadius: '6px', padding: '0.6rem 0.8rem', color: 'white', fontSize: '0.8rem', outline: 'none', transition: 'border-color 0.3s' }}
+                            onFocus={(e) => e.target.style.borderColor = 'rgba(147, 197, 253, 0.6)'}
+                            onBlur={(e) => e.target.style.borderColor = 'rgba(147, 197, 253, 0.2)'}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          onClick={handleSaveVpn}
+                          disabled={!vpnAccount || !vpnPassword || vpnSaveStatus === 'saving'}
+                          style={{
+                            background: vpnSaveStatus === 'success' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(255,255,255,0.05)',
+                            border: `1px solid ${vpnSaveStatus === 'success' ? 'rgba(16, 185, 129, 0.5)' : 'rgba(255,255,255,0.1)'}`,
+                            color: vpnSaveStatus === 'success' ? '#10b981' : (vpnSaveStatus === 'error' ? '#ef4444' : 'rgba(255,255,255,0.8)'),
+                            padding: '0.4rem 1rem',
+                            borderRadius: '4px',
+                            fontSize: '0.65rem',
+                            cursor: (!vpnAccount || !vpnPassword || vpnSaveStatus === 'saving') ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.3s'
+                          }}
+                        >
+                          {vpnSaveStatus === 'saving' ? 'SAVING...' : vpnSaveStatus === 'success' ? 'SAVED ✓' : vpnSaveStatus === 'error' ? 'ERROR ✗' : 'SAVE CREDENTIALS'}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="mt-auto flex justify-end">
@@ -475,6 +667,13 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
                   .ai-chat-markdown code { background: rgba(255,255,255,0.08); padding: 0.15em 0.3em; border-radius: 4px; font-family: monospace; font-size: 0.9em; color: #e2e8f0; }
                   .ai-chat-markdown pre { background: #1e2536; padding: 1rem; border-radius: 6px; overflow-x: auto; margin: 0.5em 0; }
                   .ai-chat-markdown pre code { background: transparent; padding: 0; color: #e2e8f0; }
+                  .ai-paper-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); border-radius: 8px; padding: 12px; margin: 8px 0; display: flex; flex-direction: column; gap: 8px; transition: all 0.3s; }
+                  .ai-paper-card:hover { background: rgba(255,255,255,0.05); border-color: rgba(147, 197, 253, 0.3); }
+                  .ai-paper-title { font-weight: 600; color: #fff; font-size: 0.95rem; }
+                  .ai-paper-meta { font-size: 0.75rem; color: #9ca3af; display: flex; gap: 12px; }
+                  .ai-paper-abstract { font-size: 0.8rem; color: #d1d5db; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+                  .ai-paper-btn { align-self: flex-start; background: rgba(147, 197, 253, 0.1); border: 1px solid rgba(147, 197, 253, 0.3); color: #93c5fd; padding: 4px 12px; border-radius: 4px; font-size: 0.75rem; cursor: pointer; transition: all 0.2s; }
+                  .ai-paper-btn:hover { background: rgba(147, 197, 253, 0.2); }
                 `}</style>
                 {/* 顶栏 */}
                 <div className="px-6 py-4 flex items-center justify-between" style={{ background: '#191e2b', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -650,9 +849,46 @@ export default function GlobalAIOverlay({ isOpen, onClose }: GlobalAIOverlayProp
                             className="ai-chat-markdown"
                           >
                             {msg.role === 'assistant' ? (
-                              <ReactMarkdown>
-                                {(msg.content || '').replace(/【\d+†source】/g, '')}
-                              </ReactMarkdown>
+                              <>
+                                <ReactMarkdown>
+                                  {(msg.content || '').replace(/【\d+†source】/g, '')}
+                                </ReactMarkdown>
+                                {/* 渲染注入的论文卡片 */}
+                                {msg._papers && msg._papers.length > 0 && (
+                                  <div className="mt-4 flex flex-col gap-2">
+                                    {msg._papers.map((paper: any, idx: number) => (
+                                      <div key={idx} className="ai-paper-card">
+                                        <div className="ai-paper-title">{paper.title}</div>
+                                        <div className="ai-paper-meta">
+                                          <span>{paper.authors?.map((a:any)=>a.name).join(', ') || 'Unknown Authors'}</span>
+                                          <span>•</span>
+                                          <span>{paper.year || 'Unknown Year'}</span>
+                                          {paper.citationCount !== undefined && (
+                                            <>
+                                              <span>•</span>
+                                              <span>{paper.citationCount} Citations</span>
+                                            </>
+                                          )}
+                                        </div>
+                                        {paper.abstract && (
+                                          <div className="ai-paper-abstract">{paper.abstract}</div>
+                                        )}
+                                        {paper.externalIds?.DOI && (
+                                          <button 
+                                            className="ai-paper-btn"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              window.electronAPI.knowledge.testDoiDownload(paper.externalIds.DOI);
+                                            }}
+                                          >
+                                            直达出版商下载 (DOI: {paper.externalIds.DOI})
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </>
                             ) : (
                               <div style={{ whiteSpace: 'pre-wrap' }}>{msg.content || ''}</div>
                             )}
