@@ -85,9 +85,11 @@ export class AiService {
             console.log('[AI] Submitting tool result back to model...');
             
             // 注入后置的白名单过滤逻辑（避免污染首次搜索的 Prompt）
+            // 注意：Minimax 等大部分 API 不允许在对话中途插入 role: 'system' 的消息
+            // 必须将其作为 role: 'user'（或追加到现有的 user/tool 消息中）来传递隐式指令
             newMessages.push({
-              role: 'system',
-              content: `【学术文献推荐约束】：\n你已经获取到了最新的论文数据。在向用户推荐时，请检查数据的 publisher 字段。如果它不在以下白名单内，必须在回复中明确标注：“⚠️ 注意：这篇论文属于 [XX 数据库]，目前未在机构采购清单中，可能无法通过直达通道获取全文。”\n\n白名单：[Web of Science, ACM, IEEE, Springer, Elsevier, Wiley, Oxford, Cambridge, Nature, Science]`
+              role: 'user',
+              content: `[系统级指令]：你已经获取到了最新的论文数据。在向用户推荐时，请严格检查数据的 publisher 字段。如果它不在以下白名单内，必须在回复中明确标注：“⚠️ 注意：这篇论文属于 [XX 数据库]，目前未在机构采购清单中，可能无法通过直达通道获取全文。”\n\n白名单：[Web of Science, ACM, IEEE, Springer, Elsevier, Wiley, Oxford, Cambridge, Nature, Science]`
             });
 
             const finalResponse = await this.callMinimax(apiKey, model, newMessages, tools);
