@@ -27,7 +27,7 @@ function createWindow(): void {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      webSecurity: false // 允许 iframe 读取本地 file:// 协议文件
+      webSecurity: true /* 修复 Cloudflare 验证无限循环 */ // 允许 iframe 读取本地 file:// 协议文件
     }
   })
 
@@ -49,6 +49,14 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  // 移除 UserAgent 中的 Electron 标识，防止被 Cloudflare 秒拦截
+  const defaultUserAgent = app.userAgentFallback || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  app.userAgentFallback = defaultUserAgent.replace(/Electron\/\S+\s?/, '').replace(/OASIS\/\S+\s?/, '');
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    details.requestHeaders['User-Agent'] = app.userAgentFallback;
+    callback({ requestHeaders: details.requestHeaders });
+  });
+
   electronApp.setAppUserModelId('com.futurehci.app')
 
   // 必须在 app.whenReady() 之后才能安全调用 safeStorage
@@ -922,7 +930,7 @@ app.whenReady().then(() => {
           partition: 'persist:ruc-webvpn', // 共享 WebVPN 会话，享受免密权限
           nodeIntegration: false,
           contextIsolation: true,
-          webSecurity: false
+          webSecurity: true /* 修复 Cloudflare 验证无限循环 */
         }
       })
       
@@ -942,7 +950,7 @@ app.whenReady().then(() => {
                 partition: 'persist:ruc-webvpn',
                 nodeIntegration: false,
                 contextIsolation: true,
-                webSecurity: false
+                webSecurity: true /* 修复 Cloudflare 验证无限循环 */
               }
             }
           }
@@ -977,7 +985,7 @@ const setupWebvpnBrowseWindow = (win: BrowserWindow) => {
           partition: 'persist:ruc-webvpn',
           nodeIntegration: false,
           contextIsolation: true,
-          webSecurity: false
+          webSecurity: true /* 修复 Cloudflare 验证无限循环 */
         }
       }
     }
@@ -1007,7 +1015,7 @@ ipcMain.handle('knowledge:open-wos', async () => {
         partition: 'persist:ruc-webvpn', // 共享相同的 Session，自动免登录
         nodeIntegration: false,
         contextIsolation: true,
-        webSecurity: false
+        webSecurity: true /* 修复 Cloudflare 验证无限循环 */
       }
     })
     
